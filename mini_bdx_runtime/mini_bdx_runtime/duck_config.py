@@ -1,5 +1,6 @@
 import json
 from typing import Optional
+from mini_bdx_runtime.raw_imu import ImuCalibration
 import os
 
 HOME_DIR = os.path.expanduser("~")
@@ -48,6 +49,11 @@ class DuckConfig:
 
         self.start_paused = self.json_config.get("start_paused", False)
         self.imu_upside_down = self.json_config.get("imu_upside_down", False)
+        imu_calib_raw = self.json_config.get("imu_calib", {})
+        accelerometer_calib = tuple(imu_calib_raw.get("accelerometer", [0, 0, 0]))
+        gyroscope_calib = tuple(imu_calib_raw.get("gyroscope", [0, 0, 0]))
+        magnetometer_calib = tuple(imu_calib_raw.get("magnetometer", [0, 0, 0]))
+        self.imu_calib = ImuCalibration(accelerometer_calib, gyroscope_calib, magnetometer_calib)
         self.phase_frequency_factor_offset = self.json_config.get(
             "phase_frequency_factor_offset", 0.0
         )

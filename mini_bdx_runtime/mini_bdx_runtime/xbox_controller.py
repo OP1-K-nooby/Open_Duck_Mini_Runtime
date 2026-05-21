@@ -55,11 +55,11 @@ class XBoxController:
 
         l_x = -1 * self.p1.get_axis(0)
         l_y = -1 * self.p1.get_axis(1)
-        r_x = -1 * self.p1.get_axis(2)
-        r_y = -1 * self.p1.get_axis(3)
+        r_x = -1 * self.p1.get_axis(3)
+        r_y = -1 * self.p1.get_axis(4)
 
-        right_trigger = np.around((self.p1.get_axis(4) + 1) / 2, 3)
-        left_trigger = np.around((self.p1.get_axis(5) + 1) / 2, 3)
+        right_trigger = np.around((self.p1.get_axis(5) + 1) / 2, 3)
+        left_trigger = np.around((self.p1.get_axis(2) + 1) / 2, 3)
 
         if left_trigger < 0.1:
             left_trigger = 0

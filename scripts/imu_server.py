@@ -21,7 +21,7 @@ class IMUServer:
         self.server_socket.bind((self.host, self.port))
 
         if imu is None:
-            self.imu = Imu(50, user_pitch_bias=args.pitch_bias, upside_down=False)
+            self.imu = Imu(50, upside_down=False)
         else:
             self.imu = imu
         self.stop = False
@@ -49,7 +49,6 @@ class IMUServer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pitch_bias", type=float, default=0, help="deg")
     args = parser.parse_args()
     imu_server = IMUServer()
     try:

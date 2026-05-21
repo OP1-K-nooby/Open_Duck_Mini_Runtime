@@ -70,7 +70,7 @@ class ImuCalibrator:
 # TODO filter spikes
 class Imu:
     def __init__(
-        self, sampling_freq, user_pitch_bias=0, calibration=None, upside_down=True
+        self, sampling_freq, calibration=None, upside_down=True
     ):
         self.sampling_freq = sampling_freq
 

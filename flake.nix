@@ -112,25 +112,26 @@
             { nativeBuildInputs = [ pkgs.duckEnv ]; } ''
             cp -r ${self}/scripts scripts
             cp -r ${self}/mini_bdx_runtime mini_bdx_runtime
+            chmod -R u+w scripts mini_bdx_runtime
             python -m compileall -q scripts mini_bdx_runtime
             touch $out
           '';
 
-          # Run the test suite if any tests are present (pytest exit 5 = none).
+          # Run the unit-test suite from ./tests if present. (The scripts/*_test.py
+          # files are hardware bring-up scripts, not pytest tests, so we do not
+          # collect from the repo root.) Passes cleanly when there are no tests.
           pytest = pkgs.runCommand "open-duck-pytest"
             {
               nativeBuildInputs = [
                 (pkgs.duckPython.withPackages (ps: [ ps.mini-bdx-runtime ps.pypot ps.pytest ]))
               ];
             } ''
-            cd ${self}
-            set +e
-            pytest -q
-            code=$?
-            set -e
-            # 0 = passed, 5 = no tests collected — both are fine here.
-            if [ "$code" != "0" ] && [ "$code" != "5" ]; then
-              exit "$code"
+            if [ -d ${self}/tests ]; then
+              cp -r ${self}/tests tests
+              chmod -R u+w tests
+              python -m pytest -q -p no:cacheprovider tests
+            else
+              echo "No ./tests directory; nothing to run."
             fi
             touch $out
           '';

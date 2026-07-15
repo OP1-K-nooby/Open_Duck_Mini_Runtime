@@ -175,8 +175,10 @@ in
   mini-bdx-runtime = pyfinal.buildPythonPackage {
     pname = "mini-bdx-runtime";
     version = "0.0.1";
-    format = "setuptools";
+    pyproject = true;
     inherit src;
+
+    build-system = [ pyfinal.setuptools ];
 
     # setup.cfg pins exact versions and pulls pypot from a git URL; drop the
     # git dependency (we inject our own pypot when needed) and let

@@ -29,8 +29,14 @@ let
     "new_record_data"
   ];
 
+  # Nicer command names than the raw filename for a few scripts.
+  nameOverrides = {
+    v2_rl_walk_mujoco = "v2-rl-walk";
+  };
+
   # A stable command name for each script, e.g. open-duck-v2-rl-walk.
-  cmdName = s: "open-duck-" + (lib.replaceStrings [ "_" ] [ "-" ] s);
+  cmdName = s: "open-duck-" +
+    (nameOverrides.${s} or (lib.replaceStrings [ "_" ] [ "-" ] s));
 in
 pkgs.stdenv.mkDerivation {
   pname = "open-duck-scripts";

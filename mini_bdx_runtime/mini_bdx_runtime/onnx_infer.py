@@ -1,16 +1,22 @@
+import numpy as np
 import onnxruntime
+
+# The runtime runs the policy on CPU (Raspberry Pi, no GPU/accelerator).
+CPU_PROVIDERS = ["CPUExecutionProvider"]
 
 
 class OnnxInfer:
-    def __init__(self, onnx_model_path, input_name="obs", awd=False):
+    def __init__(
+        self, onnx_model_path: str, input_name: str = "obs", awd: bool = False
+    ) -> None:
         self.onnx_model_path = onnx_model_path
         self.ort_session = onnxruntime.InferenceSession(
-            self.onnx_model_path, providers=["CPUExecutionProvider"]
+            self.onnx_model_path, providers=CPU_PROVIDERS
         )
         self.input_name = input_name
         self.awd = awd
 
-    def infer(self, inputs):
+    def infer(self, inputs: np.ndarray) -> np.ndarray:
         if self.awd:
             outputs = self.ort_session.run(None, {self.input_name: [inputs]})
             return outputs[0][0]
@@ -25,17 +31,14 @@ if __name__ == "__main__":
     import argparse
     import time
 
-    import numpy as np
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--onnx_model_path", type=str, required=True)
     args = parser.parse_args()
 
     oi = OnnxInfer(args.onnx_model_path, awd=True)
-    inputs = np.random.uniform(size=54).astype(np.float32)
     inputs = np.arange(47).astype(np.float32)
     times = []
-    for i in range(1000):
+    for _ in range(1000):
         start = time.time()
         print(oi.infer(inputs))
         times.append(time.time() - start)

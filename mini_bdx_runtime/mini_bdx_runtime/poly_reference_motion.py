@@ -4,8 +4,9 @@ import numpy as np
 
 
 class PolyReferenceMotion:
-    def __init__(self, polynomial_coefficients: str):
-        data = pickle.load(open(polynomial_coefficients, "rb"))
+    def __init__(self, polynomial_coefficients: str) -> None:
+        with open(polynomial_coefficients, "rb") as f:
+            data = pickle.load(f)
         self.dx_range = [0, 0]
         self.dy_range = [0, 0]
         self.dtheta_range = [0, 0]
@@ -22,10 +23,10 @@ class PolyReferenceMotion:
 
         self.process(data)
 
-    def process(self, data):
+    def process(self, data: dict) -> None:
         print("[Poly ref data] Processing ...")
         _data = {}
-        for name in data.keys():
+        for name in data:
             split = name.split("_")
             dx = float(split[0])
             dy = float(split[1])
@@ -67,11 +68,7 @@ class PolyReferenceMotion:
                 _data[dx][dy][dtheta] = data[name]
 
             _coeffs = data[name]["coefficients"]
-
-            coeffs = []
-            for k, v in _coeffs.items():
-                coeffs.append(v)
-            _data[dx][dy][dtheta] = coeffs
+            _data[dx][dy][dtheta] = list(_coeffs.values())
 
         self.dxs = sorted(self.dxs)
         self.dys = sorted(self.dys)
@@ -89,11 +86,9 @@ class PolyReferenceMotion:
                 for th, dtheta in enumerate(self.dthetas):
                     self.data_array[x][y][th] = _data[dx][dy][dtheta]
 
-        self.data_array = self.data_array
-
         print("[Poly ref data] Done processing")
 
-    def vel_to_index(self, dx, dy, dtheta):
+    def vel_to_index(self, dx, dy, dtheta) -> tuple[int, int, int]:
 
         dx = np.clip(dx, self.dx_range[0], self.dx_range[1])
         dy = np.clip(dy, self.dy_range[0], self.dy_range[1])
@@ -105,14 +100,14 @@ class PolyReferenceMotion:
 
         return int(ix), int(iy), int(itheta)
 
-    def sample_polynomial(self, t, coeffs):
+    def sample_polynomial(self, t: float, coeffs) -> list:
         ret = []
         for c in coeffs:
             ret.append(np.polyval(np.flip(c), t))
 
         return ret
 
-    def get_reference_motion(self, dx, dy, dtheta, i):
+    def get_reference_motion(self, dx, dy, dtheta, i) -> list:
         ix, iy, itheta = self.vel_to_index(dx, dy, dtheta)
         t = i % self.nb_steps_in_period / self.nb_steps_in_period
         t = np.clip(t, 0.0, 1.0)  # safeguard

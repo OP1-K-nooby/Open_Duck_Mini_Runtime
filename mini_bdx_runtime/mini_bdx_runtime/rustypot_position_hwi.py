@@ -1,14 +1,26 @@
 import time
+from collections.abc import Sequence
 
 import numpy as np
 import rustypot
 
 from mini_bdx_runtime.duck_config import DuckConfig
 
+# Feetech STS3215 serial bus baud rate.
+FEETECH_BAUDRATE = 1_000_000
+# Default position-control gains applied to every joint.
+DEFAULT_KP = 32
+DEFAULT_KD = 0
+# Reduced stiffness used while powering on, so the robot eases into its pose.
+LOW_TORQUE_KP = 2
+# Delay between the power-on stiffness steps, seconds.
+TURN_ON_STEP_S = 1
+# Decimal places the present position/velocity readings are rounded to.
+ROUND_DECIMALS = 3
+
 
 class HWI:
-    def __init__(self, duck_config: DuckConfig, usb_port: str = "/dev/ttyACM0"):
-
+    def __init__(self, duck_config: DuckConfig, usb_port: str = "/dev/ttyACM0") -> None:
         self.duck_config = duck_config
 
         # Order matters here
@@ -71,48 +83,45 @@ class HWI:
 
         self.joints_offsets = self.duck_config.joints_offset
 
-        self.kps = np.ones(len(self.joints)) * 32  # default kp
-        self.kds = np.ones(len(self.joints)) * 0  # default kd
-        self.low_torque_kps = np.ones(len(self.joints)) * 2
+        self.kps = np.ones(len(self.joints)) * DEFAULT_KP
+        self.kds = np.ones(len(self.joints)) * DEFAULT_KD
+        self.low_torque_kps = np.ones(len(self.joints)) * LOW_TORQUE_KP
 
-        self.io = rustypot.feetech(usb_port, 1000000)
+        self.io = rustypot.feetech(usb_port, FEETECH_BAUDRATE)
 
-    def set_kps(self, kps):
+    def set_kps(self, kps) -> None:
         self.kps = kps
         self.io.set_kps(list(self.joints.values()), self.kps)
 
-    def set_kds(self, kds):
+    def set_kds(self, kds) -> None:
         self.kds = kds
         self.io.set_kds(list(self.joints.values()), self.kds)
 
-    def set_kp(self, id, kp):
-        self.io.set_kps([id], [kp])
-
-    def turn_on(self):
+    def turn_on(self) -> None:
         self.io.set_kps(list(self.joints.values()), self.low_torque_kps)
         print("turn on : low KPS set")
-        time.sleep(1)
+        time.sleep(TURN_ON_STEP_S)
 
         self.set_position_all(self.init_pos)
         print("turn on : init pos set")
 
-        time.sleep(1)
+        time.sleep(TURN_ON_STEP_S)
 
         self.io.set_kps(list(self.joints.values()), self.kps)
         print("turn on : high kps")
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         self.io.disable_torque(list(self.joints.values()))
 
-    def set_position(self, joint_name, pos):
+    def set_position(self, joint_name: str, pos: float) -> None:
         """
         pos is in radians
         """
-        id = self.joints[joint_name]
+        motor_id = self.joints[joint_name]
         pos = pos + self.joints_offsets[joint_name]
-        self.io.write_goal_position([id], [pos])
+        self.io.write_goal_position([motor_id], [pos])
 
-    def set_position_all(self, joints_positions):
+    def set_position_all(self, joints_positions: dict[str, float]) -> None:
         """
         joints_positions is a dictionary with joint names as keys and joint positions as values
         Warning: expects radians
@@ -126,42 +135,39 @@ class HWI:
             list(self.joints.values()), list(ids_positions.values())
         )
 
-    def get_present_positions(self, ignore=[]):
+    def get_present_positions(self, ignore: Sequence[str] = ()) -> np.ndarray | None:
         """
         Returns the present positions in radians
         """
-
         try:
-            present_positions = self.io.read_present_position(
-                list(self.joints.values())
-            )
+            present_positions = self.io.read_present_position(list(self.joints.values()))
         except Exception as e:
             print(e)
             return None
 
         present_positions = [
             pos - self.joints_offsets[joint]
-            for joint, pos in zip(self.joints.keys(), present_positions)
+            for joint, pos in zip(self.joints.keys(), present_positions, strict=True)
             if joint not in ignore
         ]
-        return np.array(np.around(present_positions, 3))
+        return np.array(np.around(present_positions, ROUND_DECIMALS))
 
-    def get_present_velocities(self, rad_s=True, ignore=[]):
+    def get_present_velocities(
+        self, rad_s: bool = True, ignore: Sequence[str] = ()
+    ) -> np.ndarray | None:
         """
         Returns the present velocities in rad/s (default) or rev/min
         """
         try:
-            present_velocities = self.io.read_present_velocity(
-                list(self.joints.values())
-            )
+            present_velocities = self.io.read_present_velocity(list(self.joints.values()))
         except Exception as e:
             print(e)
             return None
 
         present_velocities = [
             vel
-            for joint, vel in zip(self.joints.keys(), present_velocities)
+            for joint, vel in zip(self.joints.keys(), present_velocities, strict=True)
             if joint not in ignore
         ]
 
-        return np.array(np.around(present_velocities, 3))
+        return np.array(np.around(present_velocities, ROUND_DECIMALS))

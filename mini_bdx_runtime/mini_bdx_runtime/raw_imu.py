@@ -1,12 +1,40 @@
+import contextlib
 import time
 from dataclasses import dataclass
 from queue import Queue
 from threading import Thread
+from typing import Any
 
 import adafruit_bno055
 import board
 import busio
 import numpy as np
+
+# BNO055 axis remaps (x_axis, y_axis, z_axis, x_sign, y_sign, z_sign) matching
+# how the sensor is physically mounted on the robot.
+AXIS_REMAP_UPSIDE_DOWN = (
+    adafruit_bno055.AXIS_REMAP_Y,
+    adafruit_bno055.AXIS_REMAP_X,
+    adafruit_bno055.AXIS_REMAP_Z,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+)
+AXIS_REMAP_UPRIGHT = (
+    adafruit_bno055.AXIS_REMAP_Y,
+    adafruit_bno055.AXIS_REMAP_X,
+    adafruit_bno055.AXIS_REMAP_Z,
+    adafruit_bno055.AXIS_REMAP_POSITIVE,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_POSITIVE,
+)
+
+# Delay to let the sensor settle after a mode switch, seconds.
+MODE_SETTLE_S = 0.1
+# Interval between calibration-status polls, seconds.
+CALIBRATION_POLL_S = 0.1
+# The worker only keeps the most recent sample.
+SAMPLE_QUEUE_SIZE = 1
 
 
 @dataclass(frozen=True)
@@ -16,90 +44,50 @@ class ImuCalibration:
     magnetometer: tuple[int, int, int]
 
 
+def _init_bno055(upside_down: bool) -> adafruit_bno055.BNO055_I2C:
+    """Create the BNO055 over I2C in NDOF mode with the mounting axis remap."""
+    i2c = busio.I2C(board.SCL, board.SDA)
+    imu = adafruit_bno055.BNO055_I2C(i2c)
+    imu.mode = adafruit_bno055.NDOF_MODE
+    imu.axis_remap = AXIS_REMAP_UPSIDE_DOWN if upside_down else AXIS_REMAP_UPRIGHT
+    return imu
+
+
 class ImuCalibrator:
-    def __init__(self, upside_down=True):
+    def __init__(self, upside_down: bool = True) -> None:
+        self.imu = _init_bno055(upside_down)
 
-        i2c = busio.I2C(board.SCL, board.SDA)
-        self.imu = adafruit_bno055.BNO055_I2C(i2c)
-
-        self.imu.mode = adafruit_bno055.NDOF_MODE
-
-        if upside_down:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-            )
-
-        else:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-            )
-
-    def calibrate(self):
-        calibrated = self.imu.calibrated
-        while not calibrated:
+    def calibrate(self) -> ImuCalibration:
+        while not self.imu.calibrated:
             print("Calibration status: ", self.imu.calibration_status)
             print("Calibrated : ", self.imu.calibrated)
-            calibrated = self.imu.calibrated
-            time.sleep(0.1)
+            time.sleep(CALIBRATION_POLL_S)
         print("CALIBRATION DONE")
-        offsets_accelerometer = self.imu.offsets_accelerometer
-        offsets_gyroscope = self.imu.offsets_gyroscope
-        offsets_magnetometer = self.imu.offsets_magnetometer
 
-        imu_calib = ImuCalib(self.imu.offsets_accelerometer, self.imu.offsets_gyroscope, self.imu.offsets_magnetometer)
-
+        imu_calib = ImuCalibration(
+            self.imu.offsets_accelerometer,
+            self.imu.offsets_gyroscope,
+            self.imu.offsets_magnetometer,
+        )
         print(f"calibration: {imu_calib}")
-
         return imu_calib
-
 
 
 # TODO filter spikes
 class Imu:
     def __init__(
-        self, sampling_freq, calibration=None, upside_down=True
-    ):
+        self,
+        sampling_freq: int,
+        calibration: ImuCalibration | None = None,
+        upside_down: bool = True,
+    ) -> None:
         self.sampling_freq = sampling_freq
-
-        i2c = busio.I2C(board.SCL, board.SDA)
-        self.imu = adafruit_bno055.BNO055_I2C(i2c)
-
-        self.imu.mode = adafruit_bno055.NDOF_MODE
-
-        if upside_down:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-            )
-
-        else:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-            )
+        self.imu = _init_bno055(upside_down)
 
         if calibration is not None:
             print("Using calibration data")
             self.imu.mode = adafruit_bno055.CONFIG_MODE
-            time.sleep(0.1)
+            time.sleep(MODE_SETTLE_S)
             print(f"accelerometer calibration: {calibration.accelerometer}")
             self.imu.offsets_accelerometer = calibration.accelerometer
             print(f"gyroscope calibration: {calibration.gyroscope}")
@@ -107,45 +95,18 @@ class Imu:
             print(f"magnetometer calibration: {calibration.magnetometer}")
             self.imu.offsets_magnetometer = calibration.magnetometer
             self.imu.mode = adafruit_bno055.NDOF_MODE
-            time.sleep(0.1)
+            time.sleep(MODE_SETTLE_S)
         else:
             print("Imu is running uncalibrated")
 
-        self.x_offset = 0
-
-        # self.tare_x()
-
-        self.last_imu_data = [0, 0, 0, 0]
-        self.last_imu_data = {
+        self.last_imu_data: dict[str, Any] = {
             "gyro": [0, 0, 0],
             "accelero": [0, 0, 0],
         }
-        self.imu_queue = Queue(maxsize=1)
+        self.imu_queue: Queue = Queue(maxsize=SAMPLE_QUEUE_SIZE)
         Thread(target=self.imu_worker, daemon=True).start()
 
-    def tare_x(self):
-        print("Taring x ...")
-        x_values = []
-        num_values = 100
-        ok = False
-        while not ok:
-            x_values.append(np.array(self.imu.acceleration)[0])
-
-            x_values = x_values[-num_values:]
-
-            if len(x_values) == num_values:
-                mean = np.mean(x_values)
-                std = np.std(x_values)
-                if std < 0.05:
-                    ok = True
-                    self.x_offset = mean
-                    print("Tare x done")
-                else:
-                    print(std)
-
-            time.sleep(0.01)
-
-    def imu_worker(self):
+    def imu_worker(self) -> None:
         while True:
             s = time.time()
             try:
@@ -161,8 +122,6 @@ class Imu:
             if gyro.any() is None or accelero.any() is None:
                 continue
 
-            accelero[0] -= self.x_offset
-
             data = {
                 "gyro": gyro,
                 "accelero": accelero,
@@ -171,17 +130,18 @@ class Imu:
             took = time.time() - s
             time.sleep(max(0, 1 / self.sampling_freq - took))
 
-    def get_data(self):
-        try:
+    def get_data(self) -> dict[str, Any]:
+        with contextlib.suppress(Exception):
             self.last_imu_data = self.imu_queue.get(False)  # non blocking
-        except Exception:
-            pass
 
         return self.last_imu_data
 
 
 if __name__ == "__main__":
     import argparse
+
+    PRINT_PERIOD_S = 1 / 25
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument("--upside_down", action="store_true")
@@ -204,8 +164,7 @@ if __name__ == "__main__":
     imu = Imu(50, upside_down=False, calibration=imu_calib)
     while True:
         data = imu.get_data()
-        # print(data)
         print("gyro", np.around(data["gyro"], 3))
         print("accelero", np.around(data["accelero"], 3))
         print("---")
-        time.sleep(1 / 25)
+        time.sleep(PRINT_PERIOD_S)

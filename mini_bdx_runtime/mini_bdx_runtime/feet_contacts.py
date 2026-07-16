@@ -7,7 +7,7 @@ LEFT_FOOT_PIN = board.D22
 RIGHT_FOOT_PIN = board.D27
 
 class FeetContacts:
-    def __init__(self):
+    def __init__(self) -> None:
         self.left_foot = digitalio.DigitalInOut(LEFT_FOOT_PIN)
         self.left_foot.direction = digitalio.Direction.INPUT
         self.left_foot.pull = digitalio.Pull.UP
@@ -16,12 +16,12 @@ class FeetContacts:
         self.right_foot.direction = digitalio.Direction.INPUT
         self.right_foot.pull = digitalio.Pull.UP
 
-    def get(self):
+    def get(self) -> list[bool]:
         left = not self.left_foot.value
         right = not self.right_foot.value
         return [left, right]
 
-    def stop(self):
+    def stop(self) -> None:
         self.left_foot.deinit()
         self.right_foot.deinit()
 

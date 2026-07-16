@@ -1,10 +1,11 @@
+import contextlib
 import os
 import pickle
+import sys
 import time
-
-# import serial
 from queue import Queue
 from threading import Thread
+from typing import Any
 
 import adafruit_bno055
 import board
@@ -12,116 +13,114 @@ import busio
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+# BNO055 axis remaps (x_axis, y_axis, z_axis, x_sign, y_sign, z_sign) for how the
+# sensor is mounted. These differ from raw_imu's because this driver runs the
+# sensor in IMUPLUS mode and consumes fused quaternions.
+AXIS_REMAP_UPSIDE_DOWN = (
+    adafruit_bno055.AXIS_REMAP_Y,
+    adafruit_bno055.AXIS_REMAP_X,
+    adafruit_bno055.AXIS_REMAP_Z,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+)
+AXIS_REMAP_UPRIGHT = (
+    adafruit_bno055.AXIS_REMAP_Y,
+    adafruit_bno055.AXIS_REMAP_X,
+    adafruit_bno055.AXIS_REMAP_Z,
+    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_POSITIVE,
+    adafruit_bno055.AXIS_REMAP_POSITIVE,
+)
+
+# Delay to let the sensor settle after a mode switch, seconds.
+MODE_SETTLE_S = 0.1
+# Interval between calibration-status polls, seconds.
+CALIBRATION_POLL_S = 0.1
+# Persisted calibration offsets.
+CALIB_FILE = "imu_calib_data.pkl"
+# The worker only keeps the most recent sample.
+SAMPLE_QUEUE_SIZE = 1
+# Constant pitch offset applied on top of the user-supplied bias, degrees.
+NOMINAL_PITCH_BIAS = 0
+
 
 # TODO filter spikes
 class Imu:
     def __init__(
-        self, sampling_freq, user_pitch_bias=0, calibrate=False, upside_down=True
-    ):
+        self,
+        sampling_freq: int,
+        user_pitch_bias: float = 0,
+        calibrate: bool = False,
+        upside_down: bool = True,
+    ) -> None:
         self.sampling_freq = sampling_freq
         self.user_pitch_bias = user_pitch_bias
-        self.nominal_pitch_bias = 0
         self.calibrate = calibrate
-
-        # self.uart = serial.Serial("/dev/ttyS0", baudrate=9600)
-        # self.imu = adafruit_bno055.BNO055_UART(self.uart)
 
         i2c = busio.I2C(board.SCL, board.SDA)
         self.imu = adafruit_bno055.BNO055_I2C(i2c)
 
         self.imu.mode = adafruit_bno055.IMUPLUS_MODE
-        # self.imu.mode = adafruit_bno055.ACCGYRO_MODE
-        # self.imu.mode = adafruit_bno055.GYRONLY_MODE
-        # self.imu.mode = adafruit_bno055.NDOF_MODE
-        # self.imu.mode = adafruit_bno055.NDOF_FMC_OFF_MODE
+        self.imu.axis_remap = AXIS_REMAP_UPSIDE_DOWN if upside_down else AXIS_REMAP_UPRIGHT
 
-        if upside_down:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-            )
-        else:
-            self.imu.axis_remap = (
-                adafruit_bno055.AXIS_REMAP_Y,
-                adafruit_bno055.AXIS_REMAP_X,
-                adafruit_bno055.AXIS_REMAP_Z,
-                adafruit_bno055.AXIS_REMAP_NEGATIVE,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-                adafruit_bno055.AXIS_REMAP_POSITIVE,
-            )
-
-        self.pitch_bias = self.nominal_pitch_bias + self.user_pitch_bias
+        self.pitch_bias = NOMINAL_PITCH_BIAS + self.user_pitch_bias
 
         if self.calibrate:
-            self.imu.mode = adafruit_bno055.NDOF_MODE
-            calibrated = self.imu.calibrated
-            while not calibrated:
-                print("Calibration status: ", self.imu.calibration_status)
-                print("Calibrated : ", self.imu.calibrated)
-                calibrated = self.imu.calibrated
-                time.sleep(0.1)
-            print("CALIBRATION DONE")
-            offsets_accelerometer = self.imu.offsets_accelerometer
-            offsets_gyroscope = self.imu.offsets_gyroscope
-            offsets_magnetometer = self.imu.offsets_magnetometer
+            self._run_calibration()
 
-            imu_calib_data = {
-                "offsets_accelerometer": offsets_accelerometer,
-                "offsets_gyroscope": offsets_gyroscope,
-                "offsets_magnetometer": offsets_magnetometer,
-            }
-            for k, v in imu_calib_data.items():
-                print(k, v)
-
-            pickle.dump(imu_calib_data, open("imu_calib_data.pkl", "wb"))
-
-            print("Saved", "imu_calib_data.pkl")
-            exit()
-
-        if os.path.exists("imu_calib_data.pkl"):
-            imu_calib_data = pickle.load(open("imu_calib_data.pkl", "rb"))
+        if os.path.exists(CALIB_FILE):
+            with open(CALIB_FILE, "rb") as f:
+                imu_calib_data = pickle.load(f)
             self.imu.mode = adafruit_bno055.CONFIG_MODE
-            time.sleep(0.1)
+            time.sleep(MODE_SETTLE_S)
             self.imu.offsets_accelerometer = imu_calib_data["offsets_accelerometer"]
             self.imu.offsets_gyroscope = imu_calib_data["offsets_gyroscope"]
             self.imu.offsets_magnetometer = imu_calib_data["offsets_magnetometer"]
             self.imu.mode = adafruit_bno055.IMUPLUS_MODE
-            time.sleep(0.1)
+            time.sleep(MODE_SETTLE_S)
         else:
-            print("imu_calib_data.pkl not found")
+            print(f"{CALIB_FILE} not found")
             print("Imu is running uncalibrated")
 
-        self.last_imu_data = [0, 0, 0, 0]
-        self.imu_queue = Queue(maxsize=1)
+        self.last_imu_data: Any = [0, 0, 0, 0]
+        self.imu_queue: Queue = Queue(maxsize=SAMPLE_QUEUE_SIZE)
         Thread(target=self.imu_worker, daemon=True).start()
 
-    def convert_axes(self, euler):
-        euler = [np.pi + euler[1], euler[0], euler[2]]
-        return euler
+    def _run_calibration(self) -> None:
+        """Poll until the sensor self-reports calibrated, persist offsets, exit."""
+        self.imu.mode = adafruit_bno055.NDOF_MODE
+        while not self.imu.calibrated:
+            print("Calibration status: ", self.imu.calibration_status)
+            print("Calibrated : ", self.imu.calibrated)
+            time.sleep(CALIBRATION_POLL_S)
+        print("CALIBRATION DONE")
 
-    def imu_worker(self):
+        imu_calib_data = {
+            "offsets_accelerometer": self.imu.offsets_accelerometer,
+            "offsets_gyroscope": self.imu.offsets_gyroscope,
+            "offsets_magnetometer": self.imu.offsets_magnetometer,
+        }
+        for k, v in imu_calib_data.items():
+            print(k, v)
+
+        with open(CALIB_FILE, "wb") as f:
+            pickle.dump(imu_calib_data, f)
+        print("Saved", CALIB_FILE)
+        sys.exit()
+
+    def imu_worker(self) -> None:
         while True:
             s = time.time()
             try:
                 # imu returns scalar first
                 raw_orientation = np.array(self.imu.quaternion).copy()  # quat
-                euler = (
-                    R.from_quat(raw_orientation, scalar_first=True)
-                    .as_euler("xyz")
-                    .copy()
-                )
+                euler = R.from_quat(raw_orientation, scalar_first=True).as_euler("xyz").copy()
             except Exception as e:
                 print("[IMU]:", e)
                 continue
 
-            # Converting to correct axes
-            # euler = self.convert_axes(euler)
             euler[1] -= np.deg2rad(self.pitch_bias)
-            # euler[2] = 0  # ignoring yaw
 
             # gives scalar last, which is what isaac wants
             final_orientation_quat = R.from_euler("xyz", euler).as_quat()
@@ -130,11 +129,9 @@ class Imu:
             took = time.time() - s
             time.sleep(max(0, 1 / self.sampling_freq - took))
 
-    def get_data(self, euler=False, mat=False):
-        try:
+    def get_data(self, euler: bool = False, mat: bool = False) -> Any:
+        with contextlib.suppress(Exception):
             self.last_imu_data = self.imu_queue.get(False)  # non blocking
-        except Exception:
-            pass
 
         try:
             if not euler and not mat:
@@ -151,11 +148,3 @@ class Imu:
 
 if __name__ == "__main__":
     imu = Imu(50, calibrate=True, upside_down=False)
-    # imu = Imu(50, upside_down=False)
-    while True:
-        data = imu.get_data()
-        # print(data)
-        print("gyro", np.around(data["gyro"], 3))
-        print("accelero", np.around(data["accelero"], 3))
-        print("---")
-        time.sleep(1 / 25)

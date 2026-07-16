@@ -11,6 +11,16 @@ let
   inherit (pkgs) lib fetchurl;
   system = pkgs.stdenv.hostPlatform.system;
 
+  # Running the compiled extensions' import check means executing a target
+  # binary. The aarch64 builds in this project only ever happen under qemu
+  # emulation (building the Pi image on an x86_64 PC via binfmt), and that can't
+  # be relied on: onnxruntime aborts at import because qemu-user doesn't emulate
+  # the /sys cpuinfo probes it does. Note this is an emulated *native* build
+  # (nixpkgs sees buildPlatform == hostPlatform == aarch64), so canExecute won't
+  # catch it — gate on the target arch directly. Native x86_64 still gets the
+  # import smoke-test; ELF deps are validated by autoPatchelf regardless.
+  importsCheck = mods: lib.optionals (system == "x86_64-linux") mods;
+
   # rustypot ships a compiled (pyo3/maturin) extension. Building it from the
   # sdist would require vendoring the whole Cargo tree, so instead we consume
   # the upstream manylinux wheel and let autoPatchelf fix it up for Nix. Only
@@ -64,7 +74,7 @@ in
     nativeBuildInputs = [ pkgs.autoPatchelfHook ];
     buildInputs = [ pkgs.stdenv.cc.cc.lib ];
     doCheck = false;
-    pythonImportsCheck = [ "rustypot" ];
+    pythonImportsCheck = importsCheck [ "rustypot" ];
   };
 
   onnxruntime = pyfinal.buildPythonPackage {
@@ -85,7 +95,7 @@ in
     ];
     doCheck = false;
     dontCheckRuntimeDeps = true;
-    pythonImportsCheck = [ "onnxruntime" ];
+    pythonImportsCheck = importsCheck [ "onnxruntime" ];
   };
 
   adafruit-platformdetect = pyprev.adafruit-platformdetect or (mkWheel {
@@ -168,7 +178,7 @@ in
     pythonRelaxDeps = true;
     doCheck = false;
     dontCheckRuntimeDeps = true;
-    pythonImportsCheck = [ "pypot" ];
+    pythonImportsCheck = importsCheck [ "pypot" ];
   };
 
   # The runtime itself, built straight from this repo.
@@ -205,6 +215,6 @@ in
     pythonRelaxDeps = true;
     doCheck = false;
     dontCheckRuntimeDeps = true;
-    pythonImportsCheck = [ "mini_bdx_runtime" ];
+    pythonImportsCheck = importsCheck [ "mini_bdx_runtime" ];
   };
 }

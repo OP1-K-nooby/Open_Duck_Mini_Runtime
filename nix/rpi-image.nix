@@ -19,8 +19,20 @@
   boot.loader.generic-extlinux-compatible.enable = true;
 
   networking.hostName = lib.mkDefault "open-duck";
-  # Bring your own wifi: set networking.wireless / systemd-networkd as needed.
-  networking.wireless.enable = lib.mkDefault false;
+
+  # WiFi via wpa_supplicant. The PSK is kept out of the image (and the git repo)
+  # and read at runtime from a secrets file on the FAT firmware partition, which
+  # you can edit from any machine before first boot. Create a file named
+  # `wireless.env` on that partition (mounted at /boot/firmware) containing:
+  #     psk_okartie=okartie_SR
+  # If the file is missing, wpa_supplicant won't bring up the link.
+  networking.wireless = {
+    enable = lib.mkDefault true;
+    secretsFile = lib.mkDefault "/boot/firmware/wireless.env";
+    networks."Okartie".pskRaw = lib.mkDefault "ext:psk_okartie";
+  };
+  # Pull an address over DHCP on the wireless link.
+  networking.useDHCP = lib.mkDefault true;
 
   # Hardware buses used by the runtime (IMU over I2C, motor board over USB serial).
   hardware.i2c.enable = true;
@@ -44,10 +56,52 @@
   security.sudo.wheelNeedsPassword = lib.mkDefault false;
 
   services.openssh.enable = true;
-  hardware.bluetooth.enable = true; # xbox controller pairing
 
-  # The runtime environment on the PATH for interactive use.
-  environment.systemPackages = [ config.services.open-duck.package ];
+  # Bluetooth, tuned for game controllers (PS4 DualShock 4 / PS5 DualSense, and
+  # also Xbox). The controllers speak standard Bluetooth HID (hid_playstation /
+  # hid_sony in the kernel) and pair without a PIN ("Just Works").
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings.General = {
+      # DualSense/DualShock re-advertise a fresh identity each time they enter
+      # pairing mode; allow re-pairing an already-known device without a PIN.
+      JustWorksRepairing = "always";
+      # Advertise both BR/EDR and LE so either controller generation connects.
+      ControllerMode = "dual";
+      FastConnectable = true;
+      # Present as an input host so controllers offer their HID service.
+      Class = "0x000100";
+    };
+  };
+
+  # Auto-accept incoming pairings and auto-trust so a controller reconnects on
+  # its own after the first pair. Put the controller in pairing mode (PS4: hold
+  # SHARE + PS until the bar double-flashes; PS5: hold CREATE + PS), then from an
+  # SSH session run:  bluetoothctl -- scan on   (find its MAC) and
+  # bluetoothctl -- pair <MAC>  — the agent accepts and trusts it for you.
+  systemd.services.bt-agent = {
+    description = "Bluetooth auto-pairing agent for game controllers";
+    after = [ "bluetooth.target" ];
+    wantedBy = [ "bluetooth.target" ];
+    serviceConfig = {
+      Type = "simple";
+      ExecStartPre = pkgs.writeShellScript "bt-pairable" ''
+        ${pkgs.bluez}/bin/bluetoothctl -- power on || true
+        ${pkgs.bluez}/bin/bluetoothctl -- pairable on || true
+      '';
+      ExecStart = "${pkgs.bluez-tools}/bin/bt-agent --capability=NoInputNoOutput";
+      Restart = "always";
+      RestartSec = 2;
+    };
+  };
+
+  # The runtime environment on the PATH for interactive use, plus BT tooling.
+  environment.systemPackages = [
+    config.services.open-duck.package
+    pkgs.bluez
+    pkgs.bluez-tools
+  ];
 
   # Enable the walk service. onnxModelPath points at a file you drop on the
   # device; flip `restart` on once you trust it to walk on boot.

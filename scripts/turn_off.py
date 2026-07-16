@@ -1,6 +1,7 @@
-from mini_bdx_runtime.rustypot_position_hwi import HWI
-from mini_bdx_runtime.duck_config import DuckConfig
 import time
+
+from mini_bdx_runtime.duck_config import DuckConfig
+from mini_bdx_runtime.rustypot_position_hwi import HWI
 
 duck_config = DuckConfig()
 

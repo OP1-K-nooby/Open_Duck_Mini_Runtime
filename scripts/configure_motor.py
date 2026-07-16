@@ -1,6 +1,7 @@
-from pypot.feetech import FeetechSTS3215IO
 import argparse
 import time
+
+from pypot.feetech import FeetechSTS3215IO
 
 DEFAULT_ID = 1  # A brand new motor should have id 1
 

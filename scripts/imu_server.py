@@ -1,11 +1,10 @@
+import argparse
+import pickle
 import socket
 import time
-import pickle
-from mini_bdx_runtime.imu import Imu
 from threading import Thread
-import time
 
-import argparse
+from mini_bdx_runtime.imu import Imu
 
 
 class IMUServer:

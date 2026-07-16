@@ -1,22 +1,20 @@
-import time
+import os
 import pickle
+import time
 
 import numpy as np
-from mini_bdx_runtime.rustypot_position_hwi import HWI
-from mini_bdx_runtime.onnx_infer import OnnxInfer
-
-from mini_bdx_runtime.raw_imu import Imu
-from mini_bdx_runtime.poly_reference_motion import PolyReferenceMotion
-from mini_bdx_runtime.xbox_controller import XBoxController
-from mini_bdx_runtime.feet_contacts import FeetContacts
-from mini_bdx_runtime.eyes import Eyes
-from mini_bdx_runtime.sounds import Sounds
 from mini_bdx_runtime.antennas import Antennas
-from mini_bdx_runtime.projector import Projector
-from mini_bdx_runtime.rl_utils import make_action_dict, LowPassActionFilter
 from mini_bdx_runtime.duck_config import DuckConfig
-
-import os
+from mini_bdx_runtime.eyes import Eyes
+from mini_bdx_runtime.feet_contacts import FeetContacts
+from mini_bdx_runtime.onnx_infer import OnnxInfer
+from mini_bdx_runtime.poly_reference_motion import PolyReferenceMotion
+from mini_bdx_runtime.projector import Projector
+from mini_bdx_runtime.raw_imu import Imu
+from mini_bdx_runtime.rl_utils import LowPassActionFilter, make_action_dict
+from mini_bdx_runtime.rustypot_position_hwi import HWI
+from mini_bdx_runtime.sounds import Sounds
+from mini_bdx_runtime.xbox_controller import XBoxController
 
 HOME_DIR = os.path.expanduser("~")
 

@@ -1,16 +1,13 @@
+import time
+from dataclasses import dataclass
+from queue import Queue
+from threading import Thread
+
 import adafruit_bno055
 import board
 import busio
 import numpy as np
-import os
-import pickle
 
-from queue import Queue
-from threading import Thread
-import time
-
-
-from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ImuCalibration:
@@ -46,7 +43,7 @@ class ImuCalibrator:
                 adafruit_bno055.AXIS_REMAP_NEGATIVE,
                 adafruit_bno055.AXIS_REMAP_POSITIVE,
             )
-    
+
     def calibrate(self):
         calibrated = self.imu.calibrated
         while not calibrated:

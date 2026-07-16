@@ -1,10 +1,11 @@
-import pygame
-from threading import Thread
-from queue import Queue
 import time
-import numpy as np
-from mini_bdx_runtime.buttons import Buttons
+from queue import Queue
+from threading import Thread
 
+import numpy as np
+import pygame
+
+from mini_bdx_runtime.buttons import Buttons
 
 X_RANGE = [-0.15, 0.15]
 Y_RANGE = [-0.2, 0.2]

@@ -1,6 +1,7 @@
-from mini_bdx_runtime.xbox_controller import XBoxController
-from mini_bdx_runtime.antennas import Antennas
 import time
+
+from mini_bdx_runtime.antennas import Antennas
+from mini_bdx_runtime.xbox_controller import XBoxController
 
 controller = XBoxController(60)
 

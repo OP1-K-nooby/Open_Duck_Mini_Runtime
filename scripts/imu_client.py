@@ -1,12 +1,13 @@
+import argparse
+import pickle
 import socket
 import time
-import numpy as np
-import pickle
 from queue import Queue
 from threading import Thread
-from scipy.spatial.transform import Rotation as R
+
+import numpy as np
 from FramesViewer.viewer import Viewer
-import argparse
+from scipy.spatial.transform import Rotation as R
 
 
 class IMUClient:

@@ -1,7 +1,9 @@
-from picamzero import Camera
-import cv2
 import base64
 import os
+
+import cv2
+from picamzero import Camera
+
 
 class Cam:
     def __init__(self):

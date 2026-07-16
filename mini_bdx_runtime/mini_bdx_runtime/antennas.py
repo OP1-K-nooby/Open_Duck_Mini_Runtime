@@ -1,7 +1,8 @@
-import board
-import pwmio
 import math
 import time
+
+import board
+import pwmio
 
 LEFT_ANTENNA_PIN = board.D13
 RIGHT_ANTENNA_PIN = board.D12

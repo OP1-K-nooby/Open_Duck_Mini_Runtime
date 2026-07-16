@@ -23,8 +23,9 @@ class OnnxInfer:
 
 if __name__ == "__main__":
     import argparse
-    import numpy as np
     import time
+
+    import numpy as np
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--onnx_model_path", type=str, required=True)

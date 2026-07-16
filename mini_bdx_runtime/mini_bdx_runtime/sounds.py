@@ -1,7 +1,8 @@
-import pygame
-import time
 import os
 import random
+import time
+
+import pygame
 
 
 class Sounds:

@@ -1,5 +1,5 @@
-from picamzero import Camera
 import cv2
+from picamzero import Camera
 
 print("Initializing camera ...")
 cam = Camera()

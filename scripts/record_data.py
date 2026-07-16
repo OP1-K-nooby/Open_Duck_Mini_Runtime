@@ -1,7 +1,8 @@
-from pypot.feetech import FeetechSTS3215IO
 import pickle
-import numpy as np
 import time
+
+import numpy as np
+from pypot.feetech import FeetechSTS3215IO
 
 io = FeetechSTS3215IO("/dev/ttyACM0")
 

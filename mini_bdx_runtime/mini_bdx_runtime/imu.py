@@ -1,15 +1,15 @@
+import os
+import pickle
+import time
+
+# import serial
+from queue import Queue
+from threading import Thread
+
 import adafruit_bno055
 import board
 import busio
 import numpy as np
-import pickle
-import os
-
-# import serial
-
-from queue import Queue
-from threading import Thread
-import time
 from scipy.spatial.transform import Rotation as R
 
 

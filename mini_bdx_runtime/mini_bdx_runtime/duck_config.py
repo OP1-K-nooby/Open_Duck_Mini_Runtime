@@ -1,7 +1,7 @@
 import json
-from typing import Optional
-from mini_bdx_runtime.raw_imu import ImuCalibration
 import os
+
+from mini_bdx_runtime.raw_imu import ImuCalibration
 
 HOME_DIR = os.path.expanduser("~")
 
@@ -10,7 +10,7 @@ class DuckConfig:
 
     def __init__(
         self,
-        config_json_path: Optional[str] = f"{HOME_DIR}/duck_config.json",
+        config_json_path: str | None = f"{HOME_DIR}/duck_config.json",
         ignore_default: bool = False,
     ):
         """
@@ -20,7 +20,7 @@ class DuckConfig:
         self.default = False
         try:
             self.json_config = (
-                json.load(open(config_json_path, "r")) if config_json_path else {}
+                json.load(open(config_json_path)) if config_json_path else {}
             )
         except FileNotFoundError:
             print(

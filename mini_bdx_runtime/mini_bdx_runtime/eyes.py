@@ -1,8 +1,9 @@
-import board
-import digitalio
 import random
 import time
-from threading import Thread, Event
+from threading import Event, Thread
+
+import board
+import digitalio
 
 LEFT_EYE_PIN = board.D24
 RIGHT_EYE_PIN = board.D23

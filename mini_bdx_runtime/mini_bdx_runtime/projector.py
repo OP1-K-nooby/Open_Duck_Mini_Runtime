@@ -1,6 +1,7 @@
+import time
+
 import board
 import digitalio
-import time
 
 PROJECTOR_GPIO = board.D25
 

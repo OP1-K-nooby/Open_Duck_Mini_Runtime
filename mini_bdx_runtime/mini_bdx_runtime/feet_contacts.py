@@ -1,6 +1,7 @@
+import time
+
 import board
 import digitalio
-import time
 
 LEFT_FOOT_PIN = board.D22
 RIGHT_FOOT_PIN = board.D27

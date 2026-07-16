@@ -1,8 +1,9 @@
-from pypot.feetech import FeetechSTS3215IO
-import pickle
-import numpy as np
-import time
 import argparse
+import pickle
+import time
+
+import numpy as np
+from pypot.feetech import FeetechSTS3215IO
 
 parser = argparse.ArgumentParser(description="Record data from Feetech motor")
 parser.add_argument(

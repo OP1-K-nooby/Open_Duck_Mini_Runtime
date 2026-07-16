@@ -3,16 +3,15 @@ Sets up the robot in init position, you control the head with the xbox controlle
 """
 
 import time
+
 import numpy as np
-from mini_bdx_runtime.rustypot_position_hwi import HWI
-from mini_bdx_runtime.duck_config import DuckConfig
-from mini_bdx_runtime.xbox_controller import XBoxController
-
-
-from mini_bdx_runtime.eyes import Eyes
-from mini_bdx_runtime.sounds import Sounds
 from mini_bdx_runtime.antennas import Antennas
+from mini_bdx_runtime.duck_config import DuckConfig
+from mini_bdx_runtime.eyes import Eyes
 from mini_bdx_runtime.projector import Projector
+from mini_bdx_runtime.rustypot_position_hwi import HWI
+from mini_bdx_runtime.sounds import Sounds
+from mini_bdx_runtime.xbox_controller import XBoxController
 
 duck_config = DuckConfig()
 

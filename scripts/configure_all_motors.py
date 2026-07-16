@@ -1,5 +1,6 @@
-from pypot.feetech import FeetechSTS3215IO
 import time
+
+from pypot.feetech import FeetechSTS3215IO
 
 joints = {
     "left_hip_yaw": 20,

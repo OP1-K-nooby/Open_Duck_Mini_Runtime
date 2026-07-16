@@ -1,14 +1,10 @@
-from openai import OpenAI
-import time
 import json
-import os
-from io import BytesIO
-import base64
-
-from v2_rl_walk_mujoco import RLWalk
+import time
 from threading import Thread
-import cv2
+
 from mini_bdx_runtime.camera import Cam
+from openai import OpenAI
+from v2_rl_walk_mujoco import RLWalk
 
 # TODO mission : find an object ?
 
@@ -234,17 +230,9 @@ client = OpenAI()
 
 
 def call_function(name, args):
-    if name == "move_forward":
+    if name == "move_forward" or name == "move_backward" or name == "turn_left" or name == "turn_right":
         return function_map[name](args["seconds"])
-    elif name == "move_backward":
-        return function_map[name](args["seconds"])
-    elif name == "turn_left":
-        return function_map[name](args["seconds"])
-    elif name == "turn_right":
-        return function_map[name](args["seconds"])
-    elif name == "take_picture":
-        return function_map[name]()
-    elif name == "play_happy_sound":
+    elif name == "take_picture" or name == "play_happy_sound":
         return function_map[name]()
     else:
         raise ValueError(f"Unknown function name: {name}")

@@ -1,5 +1,6 @@
-import pickle
 import argparse
+import pickle
+
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()

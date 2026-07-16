@@ -1,5 +1,7 @@
-import numpy as np
 import pickle
+
+import numpy as np
+
 
 class PolyReferenceMotion:
     def __init__(self, polynomial_coefficients: str):

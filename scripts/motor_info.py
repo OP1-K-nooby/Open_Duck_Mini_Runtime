@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+
 from pypot.feetech import FeetechSTS3215IO
+
 
 def discover_servos(io):
     """Return a list of IDs for which get_present_position succeeds."""

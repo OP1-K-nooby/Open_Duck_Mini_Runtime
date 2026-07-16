@@ -11,6 +11,14 @@ let
   # The scripts package for the host's system, from this flake's overlay.
   defaultPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.scripts;
 
+  # The RL walk policy checkpoint, pinned to a static upstream revision for
+  # reproducibility (raw file from apirrone/Open_Duck_Mini@v2).
+  defaultOnnxModel = pkgs.fetchurl {
+    name = "BEST_WALK_ONNX_2.onnx";
+    url = "https://raw.githubusercontent.com/apirrone/Open_Duck_Mini/b23317a485b3cec7d8417f352478778b3475173c/BEST_WALK_ONNX_2.onnx";
+    hash = "sha256-PGBvk4GhcQzI/s23RCeH3L/OPum8AqbxIkd0qys6EGc=";
+  };
+
   # Turn an attrset into a duck_config.json in the nix store.
   configFile = name: value:
     pkgs.writeText "${name}.json" (builtins.toJSON value);
@@ -54,8 +62,14 @@ in
 
       onnxModelPath = lib.mkOption {
         type = lib.types.path;
+        default = defaultOnnxModel;
+        defaultText = lib.literalExpression
+          "BEST_WALK_ONNX_2.onnx fetched from apirrone/Open_Duck_Mini@b23317a";
         example = "/var/lib/open-duck/BEST_WALK_ONNX_2.onnx";
-        description = "Path to the ONNX walk policy checkpoint.";
+        description = ''
+          Path to the ONNX walk policy checkpoint. Defaults to the pinned
+          upstream BEST_WALK_ONNX_2.onnx fetched at build time.
+        '';
       };
 
       duckConfigPath = lib.mkOption {

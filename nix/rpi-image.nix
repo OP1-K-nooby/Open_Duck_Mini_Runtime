@@ -114,12 +114,11 @@
     pkgs.bluez-tools
   ];
 
-  # Enable the walk service. onnxModelPath points at a file you drop on the
-  # device; flip `restart` on once you trust it to walk on boot.
+  # Enable the walk service. onnxModelPath defaults to the pinned upstream model
+  # (see nix/module.nix); flip `restart` on once you trust it to walk on boot.
   services.open-duck.walk = {
     enable = lib.mkDefault true;
     restart = lib.mkDefault false;
-    onnxModelPath = lib.mkDefault "/var/lib/open-duck/BEST_WALK_ONNX_2.onnx";
     serialPort = lib.mkDefault "/dev/ttyACM0";
     # Copied from the Raspbian duck's ~/duck_config.json (calibrated IMU offsets
     # and per-joint zero offsets for this specific robot).

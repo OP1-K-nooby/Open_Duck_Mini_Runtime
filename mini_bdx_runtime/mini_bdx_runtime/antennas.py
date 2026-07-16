@@ -10,35 +10,49 @@ LEFT_SIGN = 1
 RIGHT_SIGN = -1
 MIN_UPDATE_INTERVAL = 1 / 50  # 20ms
 
+# Servo PWM parameters.
+SERVO_FREQUENCY_HZ = 50
+PWM_PERIOD_MS = 20  # 1 / SERVO_FREQUENCY_HZ, in ms
+PWM_MAX_DUTY = 65535  # full 16-bit duty cycle
+# A value in [-1, 1] maps linearly to a 1ms..2ms servo pulse.
+NEUTRAL_PULSE_MS = 1.5
+PULSE_HALF_RANGE_MS = 0.5
+# Duty-cycle clamp corresponding to the safe pulse range for these servos.
+MIN_DUTY_CYCLE = 3277
+MAX_DUTY_CYCLE = 6553
 
-def value_to_duty_cycle(v):
-    pulse_width_ms = 1.5 + (v * 0.5)  # 1ms to 2ms
-    duty_cycle = int((pulse_width_ms / 20) * 65535)
-    return min(max(duty_cycle, 3277), 6553)
+
+def value_to_duty_cycle(v: float) -> int:
+    pulse_width_ms = NEUTRAL_PULSE_MS + (v * PULSE_HALF_RANGE_MS)  # 1ms to 2ms
+    duty_cycle = int((pulse_width_ms / PWM_PERIOD_MS) * PWM_MAX_DUTY)
+    return min(max(duty_cycle, MIN_DUTY_CYCLE), MAX_DUTY_CYCLE)
 
 
 class Antennas:
-    def __init__(self):
+    def __init__(self) -> None:
         neutral_duty = value_to_duty_cycle(0)
-        self.pwm_left = pwmio.PWMOut(LEFT_ANTENNA_PIN, frequency=50, duty_cycle=neutral_duty)
-        self.pwm_right = pwmio.PWMOut(RIGHT_ANTENNA_PIN, frequency=50, duty_cycle=neutral_duty)
+        self.pwm_left = pwmio.PWMOut(
+            LEFT_ANTENNA_PIN, frequency=SERVO_FREQUENCY_HZ, duty_cycle=neutral_duty
+        )
+        self.pwm_right = pwmio.PWMOut(
+            RIGHT_ANTENNA_PIN, frequency=SERVO_FREQUENCY_HZ, duty_cycle=neutral_duty
+        )
 
-    def set_position_left(self, position):
+    def set_position_left(self, position: float) -> None:
         self.set_position(self.pwm_left, position, LEFT_SIGN)
 
-    def set_position_right(self, position):
+    def set_position_right(self, position: float) -> None:
         self.set_position(self.pwm_right, position, RIGHT_SIGN)
 
-    def set_position(self, pwm, value, sign=1):
-        # if value == 0:
-        #     return
+    def set_position(self, pwm, value: float, sign: int = 1) -> None:
         if -1 <= value <= 1:
-            duty_cycle = value_to_duty_cycle(value * sign) # Convert value to duty cycle (1ms-2ms)
+            # Convert value to duty cycle (1ms-2ms)
+            duty_cycle = value_to_duty_cycle(value * sign)
             pwm.duty_cycle = duty_cycle
         else:
             print("Invalid input! Enter a value between -1 and 1.")
 
-    def stop(self):
+    def stop(self) -> None:
         time.sleep(MIN_UPDATE_INTERVAL)
         self.set_position_left(0)
         self.set_position_right(0)

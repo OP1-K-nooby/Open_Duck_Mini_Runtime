@@ -10,7 +10,12 @@ RIGHT_EYE_PIN = board.D23
 
 
 class Eyes:
-    def __init__(self, blink_duration=0.1, min_interval=1.0, max_interval=4.0):
+    def __init__(
+        self,
+        blink_duration: float = 0.1,
+        min_interval: float = 1.0,
+        max_interval: float = 4.0,
+    ) -> None:
         self.left_eye = digitalio.DigitalInOut(LEFT_EYE_PIN)
         self.left_eye.direction = digitalio.Direction.OUTPUT
 
@@ -25,11 +30,11 @@ class Eyes:
         self._thread = Thread(target=self.run, daemon=True)
         self._thread.start()
 
-    def _set_eyes(self, state):
+    def _set_eyes(self, state: bool) -> None:
         self.left_eye.value = state
         self.right_eye.value = state
 
-    def run(self):
+    def run(self) -> None:
         try:
             while not self._stop_event.is_set():
                 self._set_eyes(False)
@@ -41,7 +46,7 @@ class Eyes:
             print(f"Error in eye thread: {err}")
             self._stop_event.set()
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop_event.set()
         self._thread.join()
         self._set_eyes(False)

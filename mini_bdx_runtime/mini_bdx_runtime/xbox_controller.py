@@ -1,3 +1,4 @@
+import contextlib
 import time
 from queue import Queue
 from threading import Thread
@@ -17,9 +18,32 @@ HEAD_PITCH_RANGE = [-0.78, 0.3]
 HEAD_YAW_RANGE = [-0.5, 0.5]
 HEAD_ROLL_RANGE = [-0.5, 0.5]
 
+# Xbox pad axis indices.
+AXIS_LEFT_X = 0
+AXIS_LEFT_Y = 1
+AXIS_LEFT_TRIGGER = 2
+AXIS_RIGHT_X = 3
+AXIS_RIGHT_Y = 4
+AXIS_RIGHT_TRIGGER = 5
+
+# Xbox pad button indices.
+BUTTON_A = 0
+BUTTON_B = 1
+BUTTON_X = 3
+BUTTON_Y = 4
+BUTTON_LB = 6
+BUTTON_RB = 7
+
+# Trigger readings below this are treated as fully released.
+TRIGGER_DEADZONE = 0.1
+# Decimal places commands and triggers are rounded to.
+ROUND_DECIMALS = 3
+# The worker only keeps the most recent command.
+CMD_QUEUE_SIZE = 1
+
 
 class XBoxController:
-    def __init__(self, command_freq, only_head_control=False):
+    def __init__(self, command_freq: float, only_head_control: bool = False) -> None:
         self.command_freq = command_freq
         self.head_control_mode = only_head_control
         self.only_head_control = only_head_control
@@ -31,7 +55,7 @@ class XBoxController:
         self.p1 = pygame.joystick.Joystick(0)
         self.p1.init()
         print(f"Loaded joystick with {self.p1.get_numaxes()} axes.")
-        self.cmd_queue = Queue(maxsize=1)
+        self.cmd_queue = Queue(maxsize=CMD_QUEUE_SIZE)
 
         self.A_pressed = False
         self.B_pressed = False
@@ -44,27 +68,26 @@ class XBoxController:
 
         Thread(target=self.commands_worker, daemon=True).start()
 
-    def commands_worker(self):
+    def commands_worker(self) -> None:
         while True:
             self.cmd_queue.put(self.get_commands())
             time.sleep(1 / self.command_freq)
 
-    def get_commands(self):
+    def get_commands(self) -> tuple:
         last_commands = self.last_commands
         left_trigger = self.last_left_trigger
         right_trigger = self.last_right_trigger
 
-        l_x = -1 * self.p1.get_axis(0)
-        l_y = -1 * self.p1.get_axis(1)
-        r_x = -1 * self.p1.get_axis(3)
-        r_y = -1 * self.p1.get_axis(4)
+        l_x = -1 * self.p1.get_axis(AXIS_LEFT_X)
+        l_y = -1 * self.p1.get_axis(AXIS_LEFT_Y)
+        r_x = -1 * self.p1.get_axis(AXIS_RIGHT_X)
 
-        right_trigger = np.around((self.p1.get_axis(5) + 1) / 2, 3)
-        left_trigger = np.around((self.p1.get_axis(2) + 1) / 2, 3)
+        right_trigger = np.around((self.p1.get_axis(AXIS_RIGHT_TRIGGER) + 1) / 2, ROUND_DECIMALS)
+        left_trigger = np.around((self.p1.get_axis(AXIS_LEFT_TRIGGER) + 1) / 2, ROUND_DECIMALS)
 
-        if left_trigger < 0.1:
+        if left_trigger < TRIGGER_DEADZONE:
             left_trigger = 0
-        if right_trigger < 0.1:
+        if right_trigger < TRIGGER_DEADZONE:
             right_trigger = 0
 
         if not self.head_control_mode:
@@ -121,24 +144,24 @@ class XBoxController:
         for event in pygame.event.get():
             if event.type == pygame.JOYBUTTONDOWN:
 
-                if self.p1.get_button(0):  # A button
+                if self.p1.get_button(BUTTON_A):
                     self.A_pressed = True
 
-                if self.p1.get_button(1):  # B button
+                if self.p1.get_button(BUTTON_B):
                     self.B_pressed = True
 
-                if self.p1.get_button(3):  # X button
+                if self.p1.get_button(BUTTON_X):
                     self.X_pressed = True
 
-                if self.p1.get_button(4):  # Y button
+                if self.p1.get_button(BUTTON_Y):
                     self.Y_pressed = True
                     if not self.only_head_control:
                         self.head_control_mode = not self.head_control_mode
 
-                if self.p1.get_button(6):  # LB button
+                if self.p1.get_button(BUTTON_LB):
                     self.LB_pressed = True
 
-                if self.p1.get_button(7):  # RB button
+                if self.p1.get_button(BUTTON_RB):
                     self.RB_pressed = True
 
             if event.type == pygame.JOYBUTTONUP:
@@ -149,15 +172,11 @@ class XBoxController:
                 self.LB_pressed = False
                 self.RB_pressed = False
 
-            # for i in range(10):
-            #     if self.p1.get_button(i):
-            #         print(f"Button {i} pressed")
-
         up_down = self.p1.get_hat(0)[1]
         pygame.event.pump()  # process event queue
 
         return (
-            np.around(last_commands, 3),
+            np.around(last_commands, ROUND_DECIMALS),
             self.A_pressed,
             self.B_pressed,
             self.X_pressed,
@@ -169,7 +188,7 @@ class XBoxController:
             up_down,
         )
 
-    def get_last_command(self):
+    def get_last_command(self) -> tuple:
         A_pressed = False
         B_pressed = False
         X_pressed = False
@@ -177,7 +196,7 @@ class XBoxController:
         LB_pressed = False
         RB_pressed = False
         up_down = 0
-        try:
+        with contextlib.suppress(Exception):
             (
                 self.last_commands,
                 A_pressed,
@@ -189,11 +208,7 @@ class XBoxController:
                 self.last_left_trigger,
                 self.last_right_trigger,
                 up_down,
-            ) = self.cmd_queue.get(
-                False
-            )  # non blocking
-        except Exception:
-            pass
+            ) = self.cmd_queue.get(False)  # non blocking
 
         self.buttons.update(
             A_pressed,

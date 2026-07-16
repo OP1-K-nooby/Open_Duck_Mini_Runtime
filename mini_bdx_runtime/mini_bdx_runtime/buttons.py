@@ -1,15 +1,18 @@
 import time
 
+# Debounce window: ignore re-triggers within this many seconds.
+DEFAULT_DEBOUNCE_TIMEOUT_S = 0.2
+
 
 class Button:
-    def __init__(self):
+    def __init__(self) -> None:
         self.last_pressed_time = time.time()
-        self.timeout = 0.2
+        self.timeout = DEFAULT_DEBOUNCE_TIMEOUT_S
         self.is_pressed = False
         self.triggered = False
         self.released = True
 
-    def update(self, value):
+    def update(self, value: bool) -> None:
         if self.is_pressed and not value:
             self.released = True
         self.is_pressed = value
@@ -28,7 +31,7 @@ class Button:
 
 
 class Buttons:
-    def __init__(self):
+    def __init__(self) -> None:
         self.A = Button()
         self.B = Button()
         self.X = Button()
@@ -38,7 +41,17 @@ class Buttons:
         self.dpad_up = Button()
         self.dpad_down = Button()
 
-    def update(self, A, B, X, Y, LB, RB, dpad_up, dpad_down):
+    def update(
+        self,
+        A: bool,
+        B: bool,
+        X: bool,
+        Y: bool,
+        LB: bool,
+        RB: bool,
+        dpad_up: bool,
+        dpad_down: bool,
+    ) -> None:
         self.A.update(A)
         self.B.update(B)
         self.X.update(X)
@@ -80,6 +93,11 @@ if __name__ == "__main__":
             up_down == -1,
         )
 
-        print(buttons.dpad_up.triggered, buttons.dpad_up.is_pressed, buttons.dpad_down.triggered, buttons.dpad_down.is_pressed)
+        print(
+            buttons.dpad_up.triggered,
+            buttons.dpad_up.is_pressed,
+            buttons.dpad_down.triggered,
+            buttons.dpad_down.is_pressed,
+        )
 
         time.sleep(0.05)

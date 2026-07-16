@@ -6,10 +6,10 @@ import pygame
 
 
 class Sounds:
-    def __init__(self, volume=1.0, sound_directory="./"):
+    def __init__(self, volume: float = 1.0, sound_directory: str = "./") -> None:
         pygame.mixer.init()
         pygame.mixer.music.set_volume(volume)
-        self.sounds = {}
+        self.sounds: dict = {}
         self.ok = True
         try:
             for file in os.listdir(sound_directory):
@@ -27,7 +27,7 @@ class Sounds:
             print("No sound files found in the directory.")
             self.ok = False
 
-    def play(self, sound_name):
+    def play(self, sound_name: str) -> None:
         if not self.ok:
             print("Sounds not initialized properly.")
             return
@@ -37,14 +37,14 @@ class Sounds:
         else:
             print(f"Sound '{sound_name}' not found!")
 
-    def play_random_sound(self):
+    def play_random_sound(self) -> None:
         if not self.ok:
             print("Sounds not initialized properly.")
             return
         sound_name = random.choice(list(self.sounds.keys()))
         self.sounds[sound_name].play()
 
-    def play_happy(self):
+    def play_happy(self) -> None:
         self.sounds["happy1.wav"].play()
 
 

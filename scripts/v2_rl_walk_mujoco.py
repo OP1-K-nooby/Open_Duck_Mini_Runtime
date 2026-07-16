@@ -18,6 +18,31 @@ from mini_bdx_runtime.xbox_controller import XBoxController
 
 HOME_DIR = os.path.expanduser("~")
 
+# Number of actuated leg/head DOFs the policy controls (antennas excluded).
+NUM_DOFS = 14
+# Scale applied to joint velocities in the observation vector.
+DOF_VEL_OBS_SCALE = 0.05
+
+# Control defaults.
+DEFAULT_PID = (30, 0, 0)
+DEFAULT_ACTION_SCALE = 0.25
+DEFAULT_CONTROL_FREQ = 50
+COMMAND_FREQ = 20  # hz
+
+# The head joints (obs indices 5:9) run at a softer proportional gain.
+HEAD_KP = 8
+HEAD_JOINT_SLICE = slice(5, 9)
+
+# Timing.
+STARTUP_SETTLE_S = 2
+PAUSE_POLL_S = 0.1
+FILTER_WARMUP_S = 1  # let the low-pass filter stabilize before trusting it
+
+# Gamepad-driven phase-frequency tuning.
+PHASE_FREQ_OFFSET_STEP = 0.05
+PHASE_FREQ_FACTOR_RUN = 1.3  # while LB is held
+PHASE_FREQ_FACTOR_IDLE = 1.0
+
 
 class RLWalk:
     def __init__(
@@ -25,16 +50,15 @@ class RLWalk:
         onnx_model_path: str,
         duck_config_path: str = f"{HOME_DIR}/duck_config.json",
         serial_port: str = "/dev/ttyACM0",
-        control_freq: float = 50,
-        pid=[30, 0, 0],
-        action_scale=0.25,
-        commands=False,
-        pitch_bias=0,
-        save_obs=False,
-        replay_obs=None,
-        cutoff_frequency=None,
-    ):
-
+        control_freq: float = DEFAULT_CONTROL_FREQ,
+        pid: tuple | list = DEFAULT_PID,
+        action_scale: float = DEFAULT_ACTION_SCALE,
+        commands: bool = False,
+        pitch_bias: float = 0,
+        save_obs: bool = False,
+        replay_obs: str | None = None,
+        cutoff_frequency: float | None = None,
+    ) -> None:
         self.duck_config = DuckConfig(config_json_path=duck_config_path)
 
         self.commands = commands
@@ -43,7 +67,7 @@ class RLWalk:
         self.onnx_model_path = onnx_model_path
         self.policy = OnnxInfer(self.onnx_model_path, awd=True)
 
-        self.num_dofs = 14
+        self.num_dofs = NUM_DOFS
         self.max_motor_velocity = 5.24  # rad/s
 
         # Control
@@ -56,7 +80,8 @@ class RLWalk:
 
         self.replay_obs = replay_obs
         if self.replay_obs is not None:
-            self.replay_obs = pickle.load(open(self.replay_obs, "rb"))
+            with open(self.replay_obs, "rb") as f:
+                self.replay_obs = pickle.load(f)
 
         self.action_filter = None
         if cutoff_frequency is not None:
@@ -92,7 +117,7 @@ class RLWalk:
 
         self.paused = self.duck_config.start_paused
 
-        self.command_freq = 20  # hz
+        self.command_freq = COMMAND_FREQ
         if self.commands:
             self.xbox_controller = XBoxController(self.command_freq)
 
@@ -118,8 +143,7 @@ class RLWalk:
         if self.duck_config.antennas:
             self.antennas = Antennas()
 
-    def get_obs(self):
-
+    def get_obs(self) -> np.ndarray | None:
         imu_data = self.imu.get_data()
 
         dof_pos = self.hwi.get_present_positions(
@@ -157,7 +181,7 @@ class RLWalk:
                 imu_data["accelero"],
                 cmds,
                 dof_pos - self.init_pos,
-                dof_vel * 0.05,
+                dof_vel * DOF_VEL_OBS_SCALE,
                 self.last_action,
                 self.last_last_action,
                 self.last_last_last_action,
@@ -169,32 +193,20 @@ class RLWalk:
 
         return obs
 
-    def start(self):
-        kps = [self.pid[0]] * 14
-        kds = [self.pid[2]] * 14
+    def start(self) -> None:
+        kps = [self.pid[0]] * self.num_dofs
+        kds = [self.pid[2]] * self.num_dofs
 
         # lower head kps
-        kps[5:9] = [8, 8, 8, 8]
+        kps[HEAD_JOINT_SLICE] = [HEAD_KP] * 4
 
         self.hwi.set_kps(kps)
         self.hwi.set_kds(kds)
         self.hwi.turn_on()
 
-        time.sleep(2)
+        time.sleep(STARTUP_SETTLE_S)
 
-    def get_phase_frequency_factor(self, x_velocity):
-
-        max_phase_frequency = 1.2
-        min_phase_frequency = 1.0
-
-        # Perform linear interpolation
-        freq = min_phase_frequency + (abs(x_velocity) / 0.15) * (
-            max_phase_frequency - min_phase_frequency
-        )
-
-        return freq
-
-    def run(self):
+    def run(self) -> None:
         i = 0
         try:
             print("Starting")
@@ -209,29 +221,25 @@ class RLWalk:
                         self.xbox_controller.get_last_command()
                     )
                     if self.buttons.dpad_up.triggered:
-                        self.phase_frequency_factor_offset += 0.05
-                        print(
-                            f"Phase frequency factor offset {round(self.phase_frequency_factor_offset, 3)}"
-                        )
+                        self.phase_frequency_factor_offset += PHASE_FREQ_OFFSET_STEP
+                        offset = round(self.phase_frequency_factor_offset, 3)
+                        print(f"Phase frequency factor offset {offset}")
 
                     if self.buttons.dpad_down.triggered:
-                        self.phase_frequency_factor_offset -= 0.05
-                        print(
-                            f"Phase frequency factor offset {round(self.phase_frequency_factor_offset, 3)}"
-                        )
+                        self.phase_frequency_factor_offset -= PHASE_FREQ_OFFSET_STEP
+                        offset = round(self.phase_frequency_factor_offset, 3)
+                        print(f"Phase frequency factor offset {offset}")
 
                     if self.buttons.LB.is_pressed:
-                        self.phase_frequency_factor = 1.3
+                        self.phase_frequency_factor = PHASE_FREQ_FACTOR_RUN
                     else:
-                        self.phase_frequency_factor = 1.0
+                        self.phase_frequency_factor = PHASE_FREQ_FACTOR_IDLE
 
-                    if self.buttons.X.triggered:
-                        if self.duck_config.projector:
-                            self.projector.switch()
+                    if self.buttons.X.triggered and self.duck_config.projector:
+                        self.projector.switch()
 
-                    if self.buttons.B.triggered:
-                        if self.duck_config.speaker:
-                            self.sounds.play_random_sound()
+                    if self.buttons.B.triggered and self.duck_config.speaker:
+                        self.sounds.play_random_sound()
 
                     if self.duck_config.antennas:
                         self.antennas.set_position_left(right_trigger)
@@ -245,7 +253,7 @@ class RLWalk:
                             print("UNPAUSE")
 
                 if self.paused:
-                    time.sleep(0.1)
+                    time.sleep(PAUSE_POLL_S)
                     continue
 
                 obs = self.get_obs()
@@ -283,8 +291,6 @@ class RLWalk:
                 self.last_last_action = self.last_action.copy()
                 self.last_action = action.copy()
 
-                # action = np.zeros(10)
-
                 self.motor_targets = self.init_pos + action * self.action_scale
 
                 # self.motor_targets = np.clip(
@@ -298,15 +304,13 @@ class RLWalk:
                 if self.action_filter is not None:
                     self.action_filter.push(self.motor_targets)
                     filtered_motor_targets = self.action_filter.get_filtered_action()
-                    if (
-                        time.time() - start_t > 1
-                    ):  # give time to the filter to stabilize
+                    if time.time() - start_t > FILTER_WARMUP_S:
                         self.motor_targets = filtered_motor_targets
 
                 self.prev_motor_targets = self.motor_targets.copy()
 
-                head_motor_targets = self.last_commands[3:] + self.motor_targets[5:9]
-                self.motor_targets[5:9] = head_motor_targets
+                head_motor_targets = self.last_commands[3:] + self.motor_targets[HEAD_JOINT_SLICE]
+                self.motor_targets[HEAD_JOINT_SLICE] = head_motor_targets
 
                 action_dict = make_action_dict(
                     self.motor_targets, list(self.hwi.joints.keys())
@@ -317,7 +321,6 @@ class RLWalk:
                 i += 1
 
                 took = time.time() - t
-                # print("Full loop took", took, "fps : ", np.around(1 / took, 2))
                 if (1 / self.control_freq - took) < 0:
                     print(
                         "Policy control budget exceeded by",
@@ -335,7 +338,8 @@ class RLWalk:
             self.feet_contacts.stop()
 
         if self.save_obs:
-            pickle.dump(self.saved_obs, open("robot_saved_obs.pkl", "wb"))
+            with open("robot_saved_obs.pkl", "wb") as f:
+                pickle.dump(self.saved_obs, f)
         print("TURNING OFF")
 
 
@@ -350,11 +354,11 @@ if __name__ == "__main__":
         required=False,
         default=f"{HOME_DIR}/duck_config.json",
     )
-    parser.add_argument("-a", "--action_scale", type=float, default=0.25)
-    parser.add_argument("-p", type=int, default=30)
-    parser.add_argument("-i", type=int, default=0)
-    parser.add_argument("-d", type=int, default=0)
-    parser.add_argument("-c", "--control_freq", type=int, default=50)
+    parser.add_argument("-a", "--action_scale", type=float, default=DEFAULT_ACTION_SCALE)
+    parser.add_argument("-p", type=int, default=DEFAULT_PID[0])
+    parser.add_argument("-i", type=int, default=DEFAULT_PID[1])
+    parser.add_argument("-d", type=int, default=DEFAULT_PID[2])
+    parser.add_argument("-c", "--control_freq", type=int, default=DEFAULT_CONTROL_FREQ)
     parser.add_argument("--pitch_bias", type=float, default=0, help="deg")
     parser.add_argument(
         "--commands",

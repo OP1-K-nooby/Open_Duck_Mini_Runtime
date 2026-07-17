@@ -1,4 +1,5 @@
 import pickle
+from typing import Any
 
 import numpy as np
 
@@ -7,25 +8,25 @@ class PolyReferenceMotion:
     def __init__(self, polynomial_coefficients: str) -> None:
         with open(polynomial_coefficients, "rb") as f:
             data = pickle.load(f)
-        self.dx_range = [0, 0]
-        self.dy_range = [0, 0]
-        self.dtheta_range = [0, 0]
-        self.dxs = []
-        self.dys = []
-        self.dthetas = []
-        self.data_array = []
-        self.period = None
-        self.fps = None
-        self.frame_offsets = None
-        self.startend_double_support_ratio = None
-        self.start_offset = None
-        self.nb_steps_in_period = None
+        self.dx_range: list[float] = [0, 0]
+        self.dy_range: list[float] = [0, 0]
+        self.dtheta_range: list[float] = [0, 0]
+        self.dxs: list[float] = []
+        self.dys: list[float] = []
+        self.dthetas: list[float] = []
+        self.data_array: list = []
+        self.period: float | None = None
+        self.fps: float | None = None
+        self.frame_offsets: Any = None
+        self.startend_double_support_ratio: float | None = None
+        self.start_offset: int | None = None
+        self.nb_steps_in_period: int | None = None
 
         self.process(data)
 
     def process(self, data: dict) -> None:
         print("[Poly ref data] Processing ...")
-        _data = {}
+        _data: dict = {}
         for name in data:
             split = name.split("_")
             dx = float(split[0])
@@ -33,14 +34,15 @@ class PolyReferenceMotion:
             dtheta = float(split[2])
 
             if self.period is None:
-                self.period = data[name]["period"]
-                self.fps = data[name]["fps"]
+                period = data[name]["period"]
+                fps = data[name]["fps"]
+                startend_double_support_ratio = data[name]["startend_double_support_ratio"]
+                self.period = period
+                self.fps = fps
                 self.frame_offsets = data[name]["frame_offsets"]
-                self.startend_double_support_ratio = data[name][
-                    "startend_double_support_ratio"
-                ]
-                self.start_offset = int(self.startend_double_support_ratio * self.fps)
-                self.nb_steps_in_period = int(self.period * self.fps)
+                self.startend_double_support_ratio = startend_double_support_ratio
+                self.start_offset = int(startend_double_support_ratio * fps)
+                self.nb_steps_in_period = int(period * fps)
 
             if dx not in self.dxs:
                 self.dxs.append(dx)
@@ -78,13 +80,14 @@ class PolyReferenceMotion:
         nb_dy = len(self.dys)
         nb_dtheta = len(self.dthetas)
 
-        self.data_array = nb_dx * [None]
+        data_array: list = nb_dx * [None]
         for x, dx in enumerate(self.dxs):
-            self.data_array[x] = nb_dy * [None]
+            data_array[x] = nb_dy * [None]
             for y, dy in enumerate(self.dys):
-                self.data_array[x][y] = nb_dtheta * [None]
+                data_array[x][y] = nb_dtheta * [None]
                 for th, dtheta in enumerate(self.dthetas):
-                    self.data_array[x][y][th] = _data[dx][dy][dtheta]
+                    data_array[x][y][th] = _data[dx][dy][dtheta]
+        self.data_array = data_array
 
         print("[Poly ref data] Done processing")
 

@@ -153,8 +153,8 @@ class LowPassActionFilter:
     def __init__(
         self, control_freq: float, cutoff_frequency: float = DEFAULT_LOWPASS_CUTOFF_HZ
     ) -> None:
-        self.last_action = 0
-        self.current_action = 0
+        self.last_action: float = 0
+        self.current_action: float = 0
         self.control_freq = float(control_freq)
         self.cutoff_frequency = float(cutoff_frequency)
         self.alpha = self.compute_alpha()

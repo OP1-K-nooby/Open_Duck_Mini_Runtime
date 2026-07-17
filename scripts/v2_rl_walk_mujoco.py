@@ -76,7 +76,7 @@ class RLWalk:
 
         self.save_obs = save_obs
         if self.save_obs:
-            self.saved_obs = []
+            self.saved_obs: list = []
 
         self.replay_obs = replay_obs
         if self.replay_obs is not None:

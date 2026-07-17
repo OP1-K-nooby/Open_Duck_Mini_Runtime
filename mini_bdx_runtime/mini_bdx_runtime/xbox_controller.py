@@ -55,7 +55,7 @@ class XBoxController:
         self.p1 = pygame.joystick.Joystick(0)
         self.p1.init()
         print(f"Loaded joystick with {self.p1.get_numaxes()} axes.")
-        self.cmd_queue = Queue(maxsize=CMD_QUEUE_SIZE)
+        self.cmd_queue: Queue = Queue(maxsize=CMD_QUEUE_SIZE)
 
         self.A_pressed = False
         self.B_pressed = False

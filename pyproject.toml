@@ -15,6 +15,9 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
 python_version = "3.12"
+# fc_test.py is a non-packaged experimental LLM demo built around the OpenAI
+# SDK's dynamically-typed response objects; don't gate on it.
+exclude = ["scripts/fc_test\\.py$"]
 # Hardware/vendor libraries (board, busio, rustypot, pypot, adafruit_*, pygame,
 # cv2, ...) ship no type stubs; don't fail on their missing imports.
 ignore_missing_imports = true

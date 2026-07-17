@@ -1,8 +1,13 @@
 from pypot.feetech import FeetechSTS3215IO
 
+# Feetech STS3215 serial bus baud rate.
+FEETECH_BAUDRATE = 1_000_000
+# The bus reports voltage in tenths of a volt.
+VOLTAGE_SCALE = 0.1
+
 io = FeetechSTS3215IO(
     "/dev/ttyACM0",
-    baudrate=1000000,
+    baudrate=FEETECH_BAUDRATE,
     use_sync_read=True,
 )
 
@@ -28,4 +33,4 @@ joints = {
 
 voltages = io.get_present_voltage(list(joints.values()))
 for i, name in enumerate(joints.keys()):
-    print(name, round(voltages[i] * 0.1, 2), "V")
+    print(name, round(voltages[i] * VOLTAGE_SCALE, 2), "V")

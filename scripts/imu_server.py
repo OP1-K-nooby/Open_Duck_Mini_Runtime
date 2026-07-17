@@ -6,9 +6,12 @@ from threading import Thread
 
 from mini_bdx_runtime.imu import Imu
 
+# Rate at which IMU samples are streamed to a connected client, Hz.
+SEND_FREQ = 30
+
 
 class IMUServer:
-    def __init__(self, imu=None):
+    def __init__(self, imu=None) -> None:
         self.host = "0.0.0.0"
         self.port = 1234
 
@@ -27,7 +30,7 @@ class IMUServer:
 
         Thread(target=self.run, daemon=True).start()
 
-    def run(self):
+    def run(self) -> None:
         while not self.stop:
             self.server_socket.listen(1)
             conn, address = self.server_socket.accept()  # accept new connection
@@ -37,8 +40,8 @@ class IMUServer:
                     data = self.imu.get_data()
                     data = pickle.dumps(data)
                     conn.send(data)  # send data to the client
-                    time.sleep(1 / 30)
-            except:
+                    time.sleep(1 / SEND_FREQ)
+            except Exception:
                 pass
 
         self.server_socket.close()

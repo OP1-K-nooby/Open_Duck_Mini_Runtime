@@ -56,10 +56,8 @@ for acceleration in accelerations:
 
             io.set_goal_position({1: goal_position})
             s = time.time()
-            set = False
             while True:
                 t = time.time() - s
-                # goal_position = np.rad2deg(np.sin(t**2))
                 io.set_goal_position({1: goal_position})
                 present_position = np.deg2rad(io.get_present_position([1])[0])
                 present_speed = np.deg2rad(io.get_present_speed([1])[0])
@@ -72,11 +70,6 @@ for acceleration in accelerations:
                 speeds.append(present_speed)
                 loads.append(present_load)
                 currents.append(present_current)
-
-                # if switch and t > 0.2 and not set:
-                #     goal_position = -goal_position
-                #     io.set_goal_position({1: goal_position})
-                #     set = True
 
                 if t > 3:
                     break
@@ -95,7 +88,7 @@ for acceleration in accelerations:
                 "currents": currents,
             }
 
-            pickle.dump(
-                data,
-                open(f"data_{'switch_' if switch else ''}acceleration_{acceleration}_kp_{kp}_kd_{kd}.pkl", "wb"),
-            )
+            suffix = "switch_" if switch else ""
+            filename = f"data_{suffix}acceleration_{acceleration}_kp_{kp}_kd_{kd}.pkl"
+            with open(filename, "wb") as f:
+                pickle.dump(data, f)

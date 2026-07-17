@@ -20,24 +20,7 @@ class Tools:
 
         Thread(target=self.rl_walk.run, daemon=True).start()
 
-    # def upload_image(self, image_path: str):
-    #     image_name = os.path.basename(image_path)
-    #     im = cv2.imread(image_path)
-    #     im = cv2.resize(im, (512, 512))
-    #     cv2.imwrite(image_path, im)
-    #     # command = (
-    #     #     f"scp {image_path} apirrone@s-nguyen.net:/home/apirrone/webserv/images/"
-    #     # )
-    #     command = (
-    #         f"scp {image_path} apirrone@192.168.10.103:/home/apirrone/webserv/images/"
-    #     )
-    #     print(command)
-    #     url = f"http://s-nguyen.net:4444/images/{image_name}"
-    #     os.system(command)
-    #     return url
-
-
-    def move_forward(self, seconds=2):
+    def move_forward(self, seconds: int = 2):
         seconds = max(2, min(seconds, 5))
         print(f"Moving forward for {seconds} seconds")
         self.rl_walk.last_commands[0] = 0.15
@@ -46,7 +29,7 @@ class Tools:
         print("Stopped moving forward")
         return f"Moved forward for {seconds} seconds successfully"
 
-    def turn_left(self, seconds=2):
+    def turn_left(self, seconds: int = 2):
         seconds = max(2, min(seconds, 5))
         print(f"Turning left for {seconds} seconds")
         self.rl_walk.last_commands[2] = 1.0
@@ -55,7 +38,7 @@ class Tools:
         print("Stopped turning left")
         return f"Turned left for {seconds} seconds successfully"
 
-    def turn_right(self, seconds=2):
+    def turn_right(self, seconds: int = 2):
         seconds = max(2, min(seconds, 5))
         print(f"Turning right for {seconds} seconds")
         self.rl_walk.last_commands[2] = -1.0
@@ -64,7 +47,7 @@ class Tools:
         print("Stopped turning right")
         return f"Turned right for {seconds} seconds successfully"
 
-    def move_backward(self, seconds=2):
+    def move_backward(self, seconds: int = 2):
         seconds = max(2, min(seconds, 5))
         print(f"Moving backward for {seconds} seconds")
         self.rl_walk.last_commands[0] = -0.15
@@ -176,38 +159,30 @@ openai_tools = [
     }
 ]
 
-# Mapping function names to actual methods
-function_map = {
-    "move_forward": tools_instance.move_forward,
-    "move_backward": tools_instance.move_backward,
-    "turn_left": tools_instance.turn_left,
-    "turn_right": tools_instance.turn_right,
-    "take_picture": tools_instance.take_picture,
-}
-
 messages = [
     {
         "role": "system",
         "content": (
             "You are a cute little biped robot that can move around using the following tools: "
-            "`move_forward`, `move_backward`, `turn_left`, `turn_right`, 'play_happy_sound' and 'take_picture'. "
+            "`move_forward`, `move_backward`, `turn_left`, `turn_right`, 'play_happy_sound' "
+            "and 'take_picture'. "
             "moving forward for 1 second will make you move forward by about 15 centimeters"
             "turning for 1 second will make you turn about 45 degrees"
-            "You can only perform one action at a time. If multiple actions are needed, call them step by step."
+            "You can only perform one action at a time. If multiple actions are needed, "
+            "call them step by step."
             "Explain what you are doing along the way"
             "Always start by taking a picture of the environment so you can see where you are. "
             "When you take a picture, describe what you see in the image. "
-            "make sure not to hit any walls or objects. Take pictures regularly to know where you are."
-            "Maybe it's a good idea to turn 360 degrees to check all directions. (no need if you already found it)"
-            "When given a goal to find something, if you found it, navigate to be in front of it, facing it. You want to be about 1 meter close to it"
+            "make sure not to hit any walls or objects. Take pictures regularly to know "
+            "where you are."
+            "Maybe it's a good idea to turn 360 degrees to check all directions. "
+            "(no need if you already found it)"
+            "When given a goal to find something, if you found it, navigate to be in front "
+            "of it, facing it. You want to be about 1 meter close to it"
             "When you are 1 meter close to the object, play the happy sound"
             ""
         ),
     },
-    # {
-    #     "role": "user",
-    #     "content": "Find the yellow vaccum cleaner !",
-    # },
     {
         "role": "user",
         "content": "Find the waste bin and turn around it. Play the happy sound when you are done",
@@ -230,9 +205,9 @@ client = OpenAI()
 
 
 def call_function(name, args):
-    if name == "move_forward" or name == "move_backward" or name == "turn_left" or name == "turn_right":
+    if name in ("move_forward", "move_backward", "turn_left", "turn_right"):
         return function_map[name](args["seconds"])
-    elif name == "take_picture" or name == "play_happy_sound":
+    elif name in ("take_picture", "play_happy_sound"):
         return function_map[name]()
     else:
         raise ValueError(f"Unknown function name: {name}")
@@ -250,7 +225,7 @@ while True:
     else:
         try:
             print(response.output[0].content[0].text)
-        except:
+        except Exception:
             print("Error occurred while processing response")
     for tool_call in response.output:
         if tool_call.type != "function_call":

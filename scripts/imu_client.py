@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import pickle
 import socket
 import time
@@ -9,9 +10,15 @@ import numpy as np
 from FramesViewer.viewer import Viewer
 from scipy.spatial.transform import Rotation as R
 
+DEFAULT_PORT = 1234
+DEFAULT_FREQ = 30
+RECV_BUFSIZE = 1024
+RECONNECT_DELAY_S = 0.5
+QUEUE_SIZE = 1
+
 
 class IMUClient:
-    def __init__(self, host, port=1234, freq=30):
+    def __init__(self, host: str, port: int = DEFAULT_PORT, freq: int = DEFAULT_FREQ) -> None:
         self.host = host
         self.port = port
         self.freq = freq
@@ -23,35 +30,32 @@ class IMUClient:
                 self.connected = True
             except Exception as e:
                 print(e)
-                time.sleep(0.5)
-        self.imu_queue = Queue(maxsize=1)
+                time.sleep(RECONNECT_DELAY_S)
+        self.imu_queue: Queue = Queue(maxsize=QUEUE_SIZE)
         self.last_imu = [0, 0, 0, 0]
 
         Thread(target=self.imu_worker, daemon=True).start()
 
-    def imu_worker(self):
+    def imu_worker(self) -> None:
         while True:
             try:
-                data = self.client_socket.recv(1024)  # receive response
+                data = self.client_socket.recv(RECV_BUFSIZE)  # receive response
                 data = pickle.loads(data)
 
                 self.imu_queue.put(data)
-            except:
+            except Exception:
                 print("missed imu")
 
             time.sleep(1 / self.freq)
 
     def get_imu(self):
-        try:
+        with contextlib.suppress(Exception):
             self.last_imu = self.imu_queue.get(False)
-        except:
-            pass
 
         return self.last_imu
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--ip", type=str, required=True, help="IP address of the robot")
     args = parser.parse_args()
@@ -71,7 +75,6 @@ if __name__ == "__main__":
                 fv.pushFrame(pose, "pose")
             except Exception as e:
                 print("error", e)
-                pass
-            time.sleep(1 / 30)
+            time.sleep(1 / DEFAULT_FREQ)
     except KeyboardInterrupt:
         pass

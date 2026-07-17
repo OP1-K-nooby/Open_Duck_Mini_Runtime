@@ -1,5 +1,6 @@
 import argparse
 import pickle
+import sys
 import time
 
 import numpy as np
@@ -16,7 +17,7 @@ args = parser.parse_args()
 io = FeetechSTS3215IO("/dev/ttyACM0")
 
 
-def convert_load(raw_load):
+def convert_load(raw_load: int) -> float:
     sign = -1
     if raw_load > 1023:
         raw_load -= 1024
@@ -24,7 +25,7 @@ def convert_load(raw_load):
     return sign * raw_load * 0.001
 
 
-id = 1 if args.new_firmware else 11
+motor_id = 1 if args.new_firmware else 11
 kp = 32
 kd = 0
 acceleration = 0
@@ -33,20 +34,22 @@ maximum_velocity = 0
 goal_speed = 0
 
 time.sleep(1)
-io.set_maximum_acceleration({id: maximum_acceleration})
-io.set_acceleration({id: acceleration})
-io.set_maximum_velocity({id: maximum_velocity})
-io.set_goal_speed({id: goal_speed})
-io.set_P_coefficient({id: kp})
-io.set_D_coefficient({id: kd})
+io.set_maximum_acceleration({motor_id: maximum_acceleration})
+io.set_acceleration({motor_id: acceleration})
+io.set_maximum_velocity({motor_id: maximum_velocity})
+io.set_goal_speed({motor_id: goal_speed})
+io.set_P_coefficient({motor_id: kp})
+io.set_D_coefficient({motor_id: kd})
 time.sleep(1)
 
 goal_position = 90
 
-io.set_goal_position({id: 0})
+io.set_goal_position({motor_id: 0})
 time.sleep(3)
 
-exit()
+# FIXME: this early exit makes the recording loop below dead code. Kept to
+# preserve the script's current behavior; remove it to actually record.
+sys.exit()
 
 times = []
 positions = []
@@ -55,18 +58,16 @@ speeds = []
 loads = []
 currents = []
 
-io.set_goal_position({id: goal_position})
+io.set_goal_position({motor_id: goal_position})
 
 s = time.time()
-set = False
 while True:
     t = time.time() - s
-    # goal_position = np.rad2deg(np.sin(t**2))
-    io.set_goal_position({id: goal_position})
-    present_position = np.deg2rad(io.get_present_position([id])[0])
-    present_speed = np.deg2rad(io.get_present_speed([id])[0])
-    present_load = convert_load(io.get_present_load([id])[0])
-    present_current = io.get_present_current([id])[0]
+    io.set_goal_position({motor_id: goal_position})
+    present_position = np.deg2rad(io.get_present_position([motor_id])[0])
+    present_speed = np.deg2rad(io.get_present_speed([motor_id])[0])
+    present_load = convert_load(io.get_present_load([motor_id])[0])
+    present_current = io.get_present_current([motor_id])[0]
 
     times.append(t)
     positions.append(present_position)
@@ -96,10 +97,5 @@ data = {
     "fw_version": fw_version,
 }
 
-pickle.dump(
-    data,
-    open(
-        f"data_KP_{kp}_{fw_version}.pkl",
-        "wb",
-    ),
-)
+with open(f"data_KP_{kp}_{fw_version}.pkl", "wb") as f:
+    pickle.dump(data, f)

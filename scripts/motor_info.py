@@ -3,11 +3,15 @@ import argparse
 
 from pypot.feetech import FeetechSTS3215IO
 
+# Servo IDs are scanned over this (inclusive-exclusive) range.
+SERVO_ID_MIN = 1
+SERVO_ID_MAX = 34
 
-def discover_servos(io):
+
+def discover_servos(io) -> list[int]:
     """Return a list of IDs for which get_present_position succeeds."""
     found = []
-    for sid in range(1, 34):
+    for sid in range(SERVO_ID_MIN, SERVO_ID_MAX):
         try:
             io.get_present_position([sid])
             found.append(sid)
@@ -15,7 +19,8 @@ def discover_servos(io):
             pass
     return found
 
-def read_params(io, sid):
+
+def read_params(io, sid: int) -> dict:
     """Read all required parameters for a single servo ID."""
     return {
         'id': sid,
@@ -27,7 +32,7 @@ def read_params(io, sid):
         'mode': io.get_mode([sid])[0],
     }
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Discover STS3215 servos on a serial port and dump their parameters"
     )

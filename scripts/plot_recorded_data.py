@@ -7,7 +7,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--file", type=str, required=True)
 args = parser.parse_args()
 
-data = pickle.load(open(args.file, "rb"))
+with open(args.file, "rb") as f:
+    data = pickle.load(f)
 
 
 plt.figure()

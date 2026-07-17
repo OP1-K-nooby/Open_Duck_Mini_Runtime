@@ -11,12 +11,14 @@ dummy_config = DuckConfig(config_json_path=None, ignore_default=True)
 
 print("======")
 print(
-    "Warning : this script will move the robot to its zero position quiclky, make sure it is safe to do so"
+    "Warning : this script will move the robot to its zero position quiclky, "
+    "make sure it is safe to do so"
 )
 print("======")
 print("")
 input(
-    "Press any key to start. The robot will move to its zero position. Make sure it is safe to do so. At any time, press ctrl+c to stop, the motors will be turned off."
+    "Press any key to start. The robot will move to its zero position. Make sure it is "
+    "safe to do so. At any time, press ctrl+c to stop, the motors will be turned off."
 )
 
 hwi = HWI(dummy_config)
@@ -44,22 +46,22 @@ try:
             current_pos = hwi.get_present_positions()[i]
             if current_pos is None:
                 continue
-            # hwi.control.kps[i] = 0
             hwi.io.disable_torque([joint_id])
             input(
-                f"{joint_name} is now turned off. Move it to the desired zero position and press any key to confirm the offset"
+                f"{joint_name} is now turned off. Move it to the desired zero position "
+                "and press any key to confirm the offset"
             )
             new_pos = hwi.get_present_positions()[i]
             offset = new_pos - current_pos
             print(f" ---> Offset is {offset}")
             hwi.joints_offsets[joint_name] = offset
             input(
-                "Press any key to move the motor to its zero position with offset taken into account"
+                "Press any key to move the motor to its zero position with offset "
+                "taken into account"
             )
             hwi.set_position_all(hwi.zero_pos)
             time.sleep(0.5)
             hwi.io.enable_torque([joint_id])
-            # hwi.control.kps[i] = 32
             res = input("Is that ok ? (Y/n)").lower()
             if res == "y" or res == "":
                 print("Ok, setting offset")

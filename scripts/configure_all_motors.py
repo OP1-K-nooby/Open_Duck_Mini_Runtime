@@ -2,6 +2,9 @@ import time
 
 from pypot.feetech import FeetechSTS3215IO
 
+# Proportional coefficient written to each motor.
+DEFAULT_P_COEFFICIENT = 32
+
 joints = {
     "left_hip_yaw": 20,
     "left_hip_roll": 21,
@@ -31,7 +34,7 @@ for current_id in ids:
     io.set_acceleration({current_id: 0})
     # io.set_maximum_velocity({current_id: 0})
     # io.set_goal_speed({current_id: 0})
-    io.set_P_coefficient({current_id: 32})
+    io.set_P_coefficient({current_id: DEFAULT_P_COEFFICIENT})
     io.set_I_coefficient({current_id: 0})
     io.set_D_coefficient({current_id: 0})
 

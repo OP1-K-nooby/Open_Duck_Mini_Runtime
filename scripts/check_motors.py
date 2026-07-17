@@ -9,8 +9,13 @@ import traceback
 from mini_bdx_runtime.duck_config import DuckConfig
 from mini_bdx_runtime.rustypot_position_hwi import HWI
 
+# How far each motor is nudged during the movement test, radians.
+TEST_MOVE_RAD = 0.1
+# Time waited for a motor to reach a commanded position, seconds.
+MOVE_WAIT_S = 1
 
-def main():
+
+def main() -> None:
     print("Initializing hardware interface...")
     try:
         # Initialize with default USB port - you might need to modify this
@@ -54,7 +59,10 @@ def main():
         try:
             # Try to read the position to check if motor is responsive
             position = hwi.io.read_present_position([joint_id])
-            print(f"✓ Motor '{joint_name}' (ID: {joint_id}) is responsive. Position: {position[0]:.3f}")
+            print(
+                f"✓ Motor '{joint_name}' (ID: {joint_id}) is responsive. "
+                f"Position: {position[0]:.3f}"
+            )
         except Exception as e:
             print(f"✗ Error accessing motor '{joint_name}' (ID: {joint_id}): {e}")
             print(f"Error details for motor {joint_id}: {traceback.format_exc()}")
@@ -73,9 +81,9 @@ def main():
                         try:
                             hwi.io.disable_torque([joint_id])
                             print(f"Disabled torque for motor '{joint_name}' (ID: {joint_id})")
-                        except:
+                        except Exception:
                             pass
-            except:
+            except Exception:
                 pass
             return
 
@@ -91,7 +99,9 @@ def main():
             continue
 
         print(f"\nTesting motor: '{joint_name}' (ID: {joint_id})")
-        test_this_motor = input("Test this motor? (Enter/y for yes, n to skip, q to quit): ").lower()
+        test_this_motor = input(
+            "Test this motor? (Enter/y for yes, n to skip, q to quit): "
+        ).lower()
 
         if test_this_motor == 'q':
             print("Exiting movement test...")
@@ -107,13 +117,16 @@ def main():
             current_position = hwi.io.read_present_position([joint_id])[0]
             print(f"Current position: {current_position:.3f}")
 
-            # Calculate test position (move by 0.1 radians)
-            test_position = current_position + 0.1
+            # Calculate test position
+            test_position = current_position + TEST_MOVE_RAD
 
             # Move to test position
-            print(f"Moving motor '{joint_name}' (ID: {joint_id}) to test position: {test_position:.3f}...")
+            print(
+                f"Moving motor '{joint_name}' (ID: {joint_id}) to "
+                f"test position: {test_position:.3f}..."
+            )
             hwi.io.write_goal_position([joint_id], [test_position])
-            time.sleep(1)  # Wait for movement
+            time.sleep(MOVE_WAIT_S)  # Wait for movement
 
             # Read new position
             print(f"Reading new position from motor '{joint_name}' (ID: {joint_id})...")
@@ -123,7 +136,7 @@ def main():
             # Return to original position
             print(f"Returning motor '{joint_name}' (ID: {joint_id}) to original position...")
             hwi.io.write_goal_position([joint_id], [current_position])
-            time.sleep(1)  # Wait for movement
+            time.sleep(MOVE_WAIT_S)  # Wait for movement
 
             # No confirmation question, just assume success
             print(f"✓ Motor '{joint_name}' (ID: {joint_id}) movement test completed.")

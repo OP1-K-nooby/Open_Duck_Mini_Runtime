@@ -1,6 +1,5 @@
 import argparse
 import pickle
-import sys
 import time
 
 import numpy as np
@@ -46,10 +45,6 @@ goal_position = 90
 
 io.set_goal_position({motor_id: 0})
 time.sleep(3)
-
-# FIXME: this early exit makes the recording loop below dead code. Kept to
-# preserve the script's current behavior; remove it to actually record.
-sys.exit()
 
 times = []
 positions = []

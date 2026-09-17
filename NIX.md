@@ -55,7 +55,8 @@ Add the module to your NixOS configuration:
     enable = true;
     restart = true;                       # start on boot
     onnxModelPath = "/var/lib/open-duck/BEST_WALK_ONNX_2.onnx";
-    serialPort = "/dev/ttyACM0";
+    # Stable /dev/servohat symlink for the Waveshare servo board (see below).
+    servoBoard = { vendorId = "1a86"; productId = "55d3"; };
     controlFreq = 50;
     actionScale = 0.25;
     pid = { p = 30; i = 0; d = 0; };
@@ -80,6 +81,21 @@ The service runs as the `open-duck` system user, added to the
 `/var/lib/open-duck`. Secrets (e.g. `OPENAI_API_KEY`) go through
 `services.open-duck.walk.environmentFile`.
 
+With `servoBoard` set, udev names the board `/dev/servohat` whatever `ttyACM`
+number it gets, and the service is bound to that device: a low-battery USB
+drop-out stops the walk cleanly, and it starts again when the board comes back.
+The walk also pauses whenever the gamepad disconnects. Unpause with A (Cross on
+a PS4 controller).
+
+To pair a gamepad automatically, set its Bluetooth address:
+
+```nix
+services.open-duck.controller.address = "1C:96:5A:2F:7F:14";
+```
+
+The first time, put the controller in pairing mode (PS4: hold Share + PS until
+the light bar flashes); afterwards pressing PS/Xbox reconnects it.
+
 Manage it like any unit:
 
 ```bash
@@ -91,7 +107,19 @@ journalctl -u open-duck-walk -f
 
 `nixosConfigurations.rpi` (see `nix/rpi-image.nix`) is an aarch64 NixOS system
 with the walk service, I2C, Bluetooth (for the controller), SSH and the FTDI
-latency udev rule preconfigured.
+latency udev rule preconfigured. It:
+
+- is reachable as `canard.local` (avahi);
+- joins the `Okartie` or `escargot` Wi-Fi network;
+- starts the walk on boot, paused, with the upstream `BEST_WALK_ONNX_2.onnx`
+  policy baked in;
+- pairs the PS4 controller and uses `/dev/servohat` for the servo board.
+
+The Wi-Fi passwords are not in the image: after flashing, create
+`wireless.env` on the FAT firmware partition with `psk_okartie=...` and
+`psk_escargot=...` lines. The IMU calibration and joint offsets in
+`nix/rpi-image.nix` are this duck's; refill them from `find_soft_offsets` for
+another robot.
 
 ```bash
 # On aarch64, or an x86_64 host with binfmt/qemu emulation
@@ -99,10 +127,9 @@ latency udev rule preconfigured.
 nix build .#packages.aarch64-linux.sd-image
 ```
 
-Flash `result/sd-image/*.img` to an SD card, drop your `BEST_WALK_ONNX_2.onnx`
-into `/var/lib/open-duck/`, and boot. The default login user is `duck`
-(password `duck` — change it). The walk starts paused and does not auto-run on
-boot until you set `services.open-duck.walk.restart = true`.
+Flash `result/sd-image/*.img` to an SD card and boot. The default login user
+is `canard` (password `canard` — change it). `ssh canard@canard.local`, then
+`journalctl -u open-duck-walk -f` to watch the walk.
 
 ## Tests / checks
 

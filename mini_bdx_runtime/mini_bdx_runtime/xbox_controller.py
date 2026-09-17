@@ -61,14 +61,14 @@ class XBoxController:
         self.last_left_trigger = 0.0
         self.last_right_trigger = 0.0
         pygame.init()
-        self.p1 = pygame.joystick.Joystick(0)
-        self.p1.init()
-        layout_name = detect_layout(self.p1.get_name())
-        self.layout = LAYOUTS[layout_name]
-        print(
-            f"Loaded joystick '{self.p1.get_name()}' with {self.p1.get_numaxes()} axes"
-            f" ({layout_name} layout)."
-        )
+        # The controller may be absent at startup or drop out later (Bluetooth):
+        # it is (re)opened on JOYDEVICEADDED and dropped on JOYDEVICEREMOVED.
+        self.p1: pygame.joystick.JoystickType | None = None
+        self.layout: dict[str, dict[str, int]] | None = None
+        if pygame.joystick.get_count() > 0:
+            self.open_joystick(0)
+        else:
+            print("No joystick connected, waiting for one.")
         self.cmd_queue: Queue = Queue(maxsize=CMD_QUEUE_SIZE)
 
         self.A_pressed = False
@@ -82,12 +82,60 @@ class XBoxController:
 
         Thread(target=self.commands_worker, daemon=True).start()
 
+    def open_joystick(self, device_index: int) -> None:
+        p1 = pygame.joystick.Joystick(device_index)
+        p1.init()
+        layout_name = detect_layout(p1.get_name())
+        self.p1 = p1
+        self.layout = LAYOUTS[layout_name]
+        print(
+            f"Loaded joystick '{p1.get_name()}' with {p1.get_numaxes()} axes"
+            f" ({layout_name} layout)."
+        )
+
+    def close_joystick(self) -> None:
+        if self.p1 is not None:
+            print(f"Joystick '{self.p1.get_name()}' disconnected.")
+        self.p1 = None
+        self.layout = None
+        self.last_commands = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.last_left_trigger = 0.0
+        self.last_right_trigger = 0.0
+
+    def is_connected(self) -> bool:
+        return self.p1 is not None
+
     def commands_worker(self) -> None:
         while True:
             self.cmd_queue.put(self.get_commands())
             time.sleep(1 / self.command_freq)
 
     def get_commands(self) -> tuple:
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.JOYDEVICEADDED and self.p1 is None:
+                self.open_joystick(event.device_index)
+            elif (
+                event.type == pygame.JOYDEVICEREMOVED
+                and self.p1 is not None
+                and event.instance_id == self.p1.get_instance_id()
+            ):
+                self.close_joystick()
+
+        if self.p1 is None or self.layout is None:
+            return (
+                np.zeros(7),
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                0.0,
+                0.0,
+                0,
+            )
+
         last_commands = self.last_commands
         left_trigger = self.last_left_trigger
         right_trigger = self.last_right_trigger
@@ -158,7 +206,7 @@ class XBoxController:
             last_commands[5] = head_yaw
             last_commands[6] = head_roll
 
-        for event in pygame.event.get():
+        for event in events:
             if event.type == pygame.JOYBUTTONDOWN:
 
                 if self.p1.get_button(buttons["A"]):
@@ -189,8 +237,7 @@ class XBoxController:
                 self.LB_pressed = False
                 self.RB_pressed = False
 
-        up_down = self.p1.get_hat(0)[1]
-        pygame.event.pump()  # process event queue
+        up_down = self.p1.get_hat(0)[1] if self.p1.get_numhats() > 0 else 0
 
         return (
             np.around(last_commands, ROUND_DECIMALS),

@@ -216,6 +216,11 @@ class RLWalk:
                 right_trigger = 0
                 t = time.time()
 
+                if self.commands and not self.xbox_controller.is_connected():
+                    if not self.paused:
+                        print("PAUSE (controller disconnected)")
+                    self.paused = True
+
                 if self.commands:
                     self.last_commands, self.buttons, left_trigger, right_trigger = (
                         self.xbox_controller.get_last_command()
@@ -354,6 +359,12 @@ if __name__ == "__main__":
         required=False,
         default=f"{HOME_DIR}/duck_config.json",
     )
+    parser.add_argument(
+        "--serial_port",
+        type=str,
+        default="/dev/ttyACM0",
+        help="serial port of the servo driver board",
+    )
     parser.add_argument("-a", "--action_scale", type=float, default=DEFAULT_ACTION_SCALE)
     parser.add_argument("-p", type=int, default=DEFAULT_PID[0])
     parser.add_argument("-i", type=int, default=DEFAULT_PID[1])
@@ -389,6 +400,7 @@ if __name__ == "__main__":
     rl_walk = RLWalk(
         args.onnx_model_path,
         duck_config_path=args.duck_config_path,
+        serial_port=args.serial_port,
         action_scale=args.action_scale,
         pid=pid,
         control_freq=args.control_freq,

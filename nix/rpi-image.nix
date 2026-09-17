@@ -18,21 +18,39 @@
   boot.loader.grub.enable = false;
   boot.loader.generic-extlinux-compatible.enable = true;
 
-  networking.hostName = lib.mkDefault "open-duck";
+  networking.hostName = lib.mkDefault "canard";
 
-  # WiFi via wpa_supplicant. The PSK is kept out of the image (and the git repo)
-  # and read at runtime from a secrets file on the FAT firmware partition, which
-  # you can edit from any machine before first boot. Create a file named
-  # `wireless.env` on that partition (mounted at /boot/firmware) containing:
-  #     psk_okartie=okartie_SR
+  # WiFi via wpa_supplicant; joins whichever of these networks is in range. The
+  # PSKs are kept out of the image (and the git repo) and read at runtime from a
+  # secrets file on the FAT firmware partition, which you can edit from any
+  # machine before first boot. Create a file named `wireless.env` on that
+  # partition (mounted at /boot/firmware) containing:
+  #     psk_okartie=<password>
+  #     psk_escargot=<password>
   # If the file is missing, wpa_supplicant won't bring up the link.
   networking.wireless = {
     enable = lib.mkDefault true;
     secretsFile = lib.mkDefault "/boot/firmware/wireless.env";
-    networks."Okartie".pskRaw = lib.mkDefault "ext:psk_okartie";
+    extraConfig = "country=FR";
+    networks = {
+      Okartie = { pskRaw = lib.mkDefault "ext:psk_okartie"; priority = 10; };
+      escargot = { pskRaw = lib.mkDefault "ext:psk_escargot"; priority = 5; };
+    };
   };
   # Pull an address over DHCP on the wireless link.
   networking.useDHCP = lib.mkDefault true;
+
+  # Reachable as canard.local.
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
+    publish = {
+      enable = true;
+      addresses = true;
+      workstation = true;
+    };
+  };
 
   # Hardware buses used by the runtime (IMU over I2C, motor board over USB serial).
   hardware.i2c.enable = true;
@@ -119,16 +137,22 @@
     pkgs.bluez-tools
   ];
 
-  # Enable the walk service. onnxModelPath defaults to the pinned upstream model
-  # (see nix/module.nix); flip `restart` on once you trust it to walk on boot.
+  # The walk starts on boot, paused (press A / Cross to start walking). It also
+  # pauses whenever the controller disconnects. onnxModelPath defaults to the
+  # pinned upstream model (see nix/module.nix).
   services.open-duck.walk = {
     enable = lib.mkDefault true;
-    restart = lib.mkDefault false;
-    serialPort = lib.mkDefault "/dev/ttyACM0";
+    restart = lib.mkDefault true;
+    # Waveshare bus servo adapter (CH343), reachable as /dev/servohat whatever
+    # ttyACM number it gets after a low-battery USB drop-out.
+    servoBoard = {
+      vendorId = lib.mkDefault "1a86";
+      productId = lib.mkDefault "55d3";
+    };
     # Copied from the Raspbian duck's ~/duck_config.json (calibrated IMU offsets
     # and per-joint zero offsets for this specific robot).
     duckConfig = lib.mkDefault {
-      start_paused = false;
+      start_paused = true;
       imu_upside_down = false;
       imu_calib = {
         accelerometer = [ (-86) (-22) (-9) ];

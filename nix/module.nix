@@ -35,6 +35,7 @@ let
   walkArgs = lib.escapeShellArgs ([
     "--onnx_model_path" (toString walk.onnxModelPath)
     "--duck_config_path" (toString walkConfigPath)
+    "--serial_port" walk.serialPort
     "--control_freq" (toString walk.controlFreq)
     "-a" (toString walk.actionScale)
     "-p" (toString walk.pid.p)
@@ -49,6 +50,11 @@ let
   hardwareGroups = [ "dialout" "i2c" "gpio" "audio" "input" ];
 
   controller = cfg.controller;
+
+  servoBoard = walk.servoBoard;
+  hasServoBoard = servoBoard.vendorId != null;
+  # systemd device unit of the stable symlink, e.g. dev-servohat.device.
+  servoDeviceUnit = "dev-${servoBoard.name}.device";
 
   # Bond + trust the gamepad once; afterwards the controller reconnects to the
   # duck by itself whenever its PS/Xbox button is pressed.
@@ -134,8 +140,40 @@ in
 
       serialPort = lib.mkOption {
         type = lib.types.str;
-        default = "/dev/ttyACM0";
+        default = if hasServoBoard then "/dev/${servoBoard.name}" else "/dev/ttyACM0";
+        defaultText = lib.literalExpression ''
+          if servoBoard.vendorId != null then "/dev/''${servoBoard.name}" else "/dev/ttyACM0"
+        '';
         description = "Serial port of the motor control board.";
+      };
+
+      servoBoard = {
+        vendorId = lib.mkOption {
+          type = lib.types.nullOr (lib.types.strMatching "[0-9a-f]{4}");
+          default = null;
+          example = "1a86";
+          description = ''
+            USB vendor id of the servo driver board. When set (with
+            {option}`productId`), udev gives the board a stable
+            /dev/''${name} symlink, so a USB drop-out that renumbers
+            ttyACM0 to ttyACM1 doesn't break the walk: the service stops
+            when the board disappears and starts again (paused, if
+            start_paused is set) when it comes back.
+          '';
+        };
+
+        productId = lib.mkOption {
+          type = lib.types.nullOr (lib.types.strMatching "[0-9a-f]{4}");
+          default = null;
+          example = "55d3";
+          description = "USB product id of the servo driver board.";
+        };
+
+        name = lib.mkOption {
+          type = lib.types.strMatching "[A-Za-z0-9_]+";
+          default = "servohat";
+          description = "Name of the stable /dev symlink for the servo driver board.";
+        };
       };
 
       controlFreq = lib.mkOption {
@@ -231,6 +269,17 @@ in
   })
 
   (lib.mkIf walk.enable {
+    assertions = [{
+      assertion = (servoBoard.vendorId == null) == (servoBoard.productId == null);
+      message = "services.open-duck.walk.servoBoard: set both vendorId and productId, or neither.";
+    }];
+
+    services.udev.extraRules = lib.mkIf hasServoBoard (''
+      SUBSYSTEM=="tty", ATTRS{idVendor}=="${servoBoard.vendorId}", ATTRS{idProduct}=="${servoBoard.productId}", SYMLINK+="${servoBoard.name}", TAG+="systemd"''
+      # (Re)start the walk whenever the board (re)appears.
+      + lib.optionalString walk.restart '', ENV{SYSTEMD_WANTS}+="open-duck-walk.service"''
+      + "\n");
+
     users.users.${walk.user} = lib.mkIf (walk.user == "open-duck") {
       isSystemUser = true;
       group = walk.group;
@@ -244,7 +293,12 @@ in
       description = "Open Duck Mini RL walk";
       wantedBy = lib.mkIf walk.restart [ "multi-user.target" ];
       after = [ "network.target" "sound.target" ]
-        ++ lib.optional (controller.address != null) "open-duck-controller.service";
+        ++ lib.optional (controller.address != null) "open-duck-controller.service"
+        ++ lib.optional hasServoBoard servoDeviceUnit;
+      # Stop with the servo board rather than crash-looping on a dead port.
+      bindsTo = lib.optional hasServoBoard servoDeviceUnit;
+      # Keep retrying however many times the board or controller drops out.
+      startLimitIntervalSec = 0;
 
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/open-duck-v2-rl-walk ${walkArgs}";
@@ -253,7 +307,7 @@ in
         SupplementaryGroups = hardwareGroups;
         StateDirectory = "open-duck";
         WorkingDirectory = "/var/lib/open-duck";
-        Restart = "on-failure";
+        Restart = "always";
         RestartSec = 3;
         EnvironmentFile = lib.mkIf (walk.environmentFile != null) walk.environmentFile;
         # HOME so that scripts falling back to ~/duck_config.json behave.
@@ -262,6 +316,8 @@ in
           # Use the evdev joystick backend: the layouts in xbox_controller.py
           # assume its axis/button numbering (and hidraw is root-only anyway).
           "SDL_JOYSTICK_HIDAPI=0"
+          # Headless: pygame's event queue still needs a video driver.
+          "SDL_VIDEODRIVER=dummy"
         ];
       };
     };

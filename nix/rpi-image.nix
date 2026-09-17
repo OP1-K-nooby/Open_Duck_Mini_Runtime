@@ -62,6 +62,11 @@
   security.sudo.wheelNeedsPassword = lib.mkDefault false;
 
   services.openssh.enable = true;
+  # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware.
+  hardware.enableRedistributableFirmware = true;
+
+  # The PS4 controller; bonded on first boot, then reconnects on its own.
+  services.open-duck.controller.address = lib.mkDefault "1C:96:5A:2F:7F:14";
 
   # Tailscale (as on the Raspbian duck). The daemon starts on boot; run
   # `sudo tailscale up` once to authenticate, or drop an auth key and set

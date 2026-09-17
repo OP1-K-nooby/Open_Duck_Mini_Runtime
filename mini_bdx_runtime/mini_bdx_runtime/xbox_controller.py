@@ -18,21 +18,19 @@ HEAD_PITCH_RANGE = [-0.78, 0.3]
 HEAD_YAW_RANGE = [-0.5, 0.5]
 HEAD_ROLL_RANGE = [-0.5, 0.5]
 
-# Xbox pad axis indices.
-AXIS_LEFT_X = 0
-AXIS_LEFT_Y = 1
-AXIS_LEFT_TRIGGER = 2
-AXIS_RIGHT_X = 3
-AXIS_RIGHT_Y = 4
-AXIS_RIGHT_TRIGGER = 5
-
-# Xbox pad button indices.
-BUTTON_A = 0
-BUTTON_B = 1
-BUTTON_X = 3
-BUTTON_Y = 4
-BUTTON_LB = 6
-BUTTON_RB = 7
+# Raw pygame (SDL evdev backend) axis/button indices per controller family.
+# Buttons are named after their Xbox position (A = bottom face button, ...).
+LAYOUTS: dict[str, dict[str, dict[str, int]]] = {
+    "xbox": {
+        "axes": {"lx": 0, "ly": 1, "rx": 2, "ry": 3, "rt": 4, "lt": 5},
+        "buttons": {"A": 0, "B": 1, "X": 3, "Y": 4, "LB": 6, "RB": 7},
+    },
+    # DualShock 4 / DualSense (hid_playstation): cross, circle, square, triangle, L1, R1
+    "playstation": {
+        "axes": {"lx": 0, "ly": 1, "lt": 2, "rx": 3, "ry": 4, "rt": 5},
+        "buttons": {"A": 0, "B": 1, "X": 3, "Y": 2, "LB": 4, "RB": 5},
+    },
+}
 
 # Trigger readings below this are treated as fully released.
 TRIGGER_DEADZONE = 0.1
@@ -40,6 +38,17 @@ TRIGGER_DEADZONE = 0.1
 ROUND_DECIMALS = 3
 # The worker only keeps the most recent command.
 CMD_QUEUE_SIZE = 1
+
+
+def detect_layout(joystick_name: str) -> str:
+    name = joystick_name.lower()
+    # "Xbox Wireless Controller" would otherwise match the PS4's bare name.
+    if "xbox" in name or "microsoft" in name:
+        return "xbox"
+    playstation_keys = ("wireless controller", "playstation", "sony", "dualsense", "ps4", "ps5")
+    if any(k in name for k in playstation_keys):
+        return "playstation"
+    return "xbox"
 
 
 class XBoxController:
@@ -54,7 +63,12 @@ class XBoxController:
         pygame.init()
         self.p1 = pygame.joystick.Joystick(0)
         self.p1.init()
-        print(f"Loaded joystick with {self.p1.get_numaxes()} axes.")
+        layout_name = detect_layout(self.p1.get_name())
+        self.layout = LAYOUTS[layout_name]
+        print(
+            f"Loaded joystick '{self.p1.get_name()}' with {self.p1.get_numaxes()} axes"
+            f" ({layout_name} layout)."
+        )
         self.cmd_queue: Queue = Queue(maxsize=CMD_QUEUE_SIZE)
 
         self.A_pressed = False
@@ -78,12 +92,15 @@ class XBoxController:
         left_trigger = self.last_left_trigger
         right_trigger = self.last_right_trigger
 
-        l_x = -1 * self.p1.get_axis(AXIS_LEFT_X)
-        l_y = -1 * self.p1.get_axis(AXIS_LEFT_Y)
-        r_x = -1 * self.p1.get_axis(AXIS_RIGHT_X)
+        axes = self.layout["axes"]
+        buttons = self.layout["buttons"]
 
-        right_trigger = np.around((self.p1.get_axis(AXIS_RIGHT_TRIGGER) + 1) / 2, ROUND_DECIMALS)
-        left_trigger = np.around((self.p1.get_axis(AXIS_LEFT_TRIGGER) + 1) / 2, ROUND_DECIMALS)
+        l_x = -1 * self.p1.get_axis(axes["lx"])
+        l_y = -1 * self.p1.get_axis(axes["ly"])
+        r_x = -1 * self.p1.get_axis(axes["rx"])
+
+        right_trigger = np.around((self.p1.get_axis(axes["rt"]) + 1) / 2, ROUND_DECIMALS)
+        left_trigger = np.around((self.p1.get_axis(axes["lt"]) + 1) / 2, ROUND_DECIMALS)
 
         if left_trigger < TRIGGER_DEADZONE:
             left_trigger = 0
@@ -144,24 +161,24 @@ class XBoxController:
         for event in pygame.event.get():
             if event.type == pygame.JOYBUTTONDOWN:
 
-                if self.p1.get_button(BUTTON_A):
+                if self.p1.get_button(buttons["A"]):
                     self.A_pressed = True
 
-                if self.p1.get_button(BUTTON_B):
+                if self.p1.get_button(buttons["B"]):
                     self.B_pressed = True
 
-                if self.p1.get_button(BUTTON_X):
+                if self.p1.get_button(buttons["X"]):
                     self.X_pressed = True
 
-                if self.p1.get_button(BUTTON_Y):
+                if self.p1.get_button(buttons["Y"]):
                     self.Y_pressed = True
                     if not self.only_head_control:
                         self.head_control_mode = not self.head_control_mode
 
-                if self.p1.get_button(BUTTON_LB):
+                if self.p1.get_button(buttons["LB"]):
                     self.LB_pressed = True
 
-                if self.p1.get_button(BUTTON_RB):
+                if self.p1.get_button(buttons["RB"]):
                     self.RB_pressed = True
 
             if event.type == pygame.JOYBUTTONUP:

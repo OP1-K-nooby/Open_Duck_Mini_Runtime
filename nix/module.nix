@@ -47,6 +47,28 @@ let
   ++ walk.extraArgs);
 
   hardwareGroups = [ "dialout" "i2c" "gpio" "audio" "input" ];
+
+  controller = cfg.controller;
+
+  # Bond + trust the gamepad once; afterwards the controller reconnects to the
+  # duck by itself whenever its PS/Xbox button is pressed.
+  pairScript = pkgs.writeShellScript "open-duck-pair-controller" ''
+    set -u
+    addr=${lib.escapeShellArg controller.address}
+    btctl() { ${pkgs.bluez}/bin/bluetoothctl "$@"; }
+
+    btctl power on
+    until btctl info "$addr" | grep -q "Bonded: yes"; do
+      echo "Controller $addr not bonded yet: put it in pairing mode (hold Share + PS until the light bar flashes)."
+      # Drop any stale, half-paired entry before retrying.
+      btctl remove "$addr" >/dev/null 2>&1 || true
+      btctl --timeout 10 scan on >/dev/null
+      btctl --agent NoInputNoOutput --timeout 20 pair "$addr" || sleep 5
+    done
+    btctl trust "$addr"
+    btctl connect "$addr" || true
+    echo "Controller $addr bonded and trusted."
+  '';
 in
 {
   options.services.open-duck = {
@@ -55,6 +77,19 @@ in
       default = defaultPackage;
       defaultText = lib.literalExpression "open-duck flake scripts package";
       description = "The open-duck-scripts package providing the executables.";
+    };
+
+    controller = {
+      address = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}");
+        default = null;
+        example = "1C:96:5A:2F:7F:14";
+        description = ''
+          Bluetooth address of the gamepad (Xbox or PS4) driving the duck. When
+          set, the duck bonds with it on boot (the controller must be in pairing
+          mode the first time) and trusts it, so it reconnects automatically.
+        '';
+      };
     };
 
     walk = {
@@ -174,7 +209,28 @@ in
     };
   };
 
-  config = lib.mkIf walk.enable {
+  config = lib.mkMerge [
+  (lib.mkIf (controller.address != null) {
+    hardware.bluetooth.enable = true;
+    hardware.bluetooth.powerOnBoot = true;
+    # Gamepads over Bluetooth HID.
+    boot.kernelModules = [ "uhid" "hid_playstation" ];
+
+    systemd.services.open-duck-controller = {
+      description = "Pair and trust the Open Duck Mini gamepad";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "bluetooth.service" ];
+      requires = [ "bluetooth.service" ];
+      serviceConfig = {
+        # Not oneshot: waiting for the controller must not stall boot.
+        Type = "exec";
+        RemainAfterExit = true;
+        ExecStart = pairScript;
+      };
+    };
+  })
+
+  (lib.mkIf walk.enable {
     users.users.${walk.user} = lib.mkIf (walk.user == "open-duck") {
       isSystemUser = true;
       group = walk.group;
@@ -187,7 +243,8 @@ in
     systemd.services.open-duck-walk = {
       description = "Open Duck Mini RL walk";
       wantedBy = lib.mkIf walk.restart [ "multi-user.target" ];
-      after = [ "network.target" "sound.target" ];
+      after = [ "network.target" "sound.target" ]
+        ++ lib.optional (controller.address != null) "open-duck-controller.service";
 
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/open-duck-v2-rl-walk ${walkArgs}";
@@ -200,8 +257,14 @@ in
         RestartSec = 3;
         EnvironmentFile = lib.mkIf (walk.environmentFile != null) walk.environmentFile;
         # HOME so that scripts falling back to ~/duck_config.json behave.
-        Environment = [ "HOME=/var/lib/open-duck" ];
+        Environment = [
+          "HOME=/var/lib/open-duck"
+          # Use the evdev joystick backend: the layouts in xbox_controller.py
+          # assume its axis/button numbering (and hidraw is root-only anyway).
+          "SDL_JOYSTICK_HIDAPI=0"
+        ];
       };
     };
-  };
+  })
+  ];
 }

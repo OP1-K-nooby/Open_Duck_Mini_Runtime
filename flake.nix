@@ -38,11 +38,27 @@
             src = self;
             duckEnv = final.duckEnv;
           };
+
+          # The upstream walk policies: open-duck-models.{best-walk,best-walk-2}.
+          open-duck-models = final.callPackage ./nix/models.nix { };
         };
 
       pkgsFor = system: import nixpkgs {
         inherit system;
         overlays = [ overlay ];
+      };
+
+      # One NixOS configuration per robot: every directory under ./ducks is a
+      # duck, its default.nix layered on top of the shared Pi image.
+      ducks = nixpkgs.lib.filterAttrs (_: type: type == "directory")
+        (builtins.readDir ./ducks);
+      mkDuck = name: _: nixpkgs.lib.nixosSystem {
+        modules = [
+          { nixpkgs.overlays = [ overlay ]; }
+          self.nixosModules.default
+          ./nix/rpi-image.nix
+          (./ducks + "/${name}")
+        ];
       };
     in
     {
@@ -57,11 +73,18 @@
           python = pkgs.duckEnv;
           # The runtime library on its own.
           runtime = pkgs.duckPython.pkgs.mini-bdx-runtime;
+          # The pinned upstream walk policies (ONNX files).
+          model-best-walk = pkgs.open-duck-models.best-walk;
+          model-best-walk-2 = pkgs.open-duck-models.best-walk-2;
         }
-        # The SD image is aarch64; expose it where it can be built natively.
-        // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
-          sd-image = self.nixosConfigurations.rpi.config.system.build.sdImage;
-        });
+        # The SD images are aarch64; expose them where they can be built
+        # natively. `sd-image` is the first duck, canard.
+        // nixpkgs.lib.optionalAttrs (system == "aarch64-linux") (
+          nixpkgs.lib.mapAttrs' (name: _: nixpkgs.lib.nameValuePair "sd-image-${name}"
+            self.nixosConfigurations.${name}.config.system.build.sdImage)
+            ducks
+          // { sd-image = self.packages.${system}.sd-image-canard; }
+        ));
 
       apps = forAllSystems (system:
         let
@@ -141,14 +164,10 @@
       nixosModules.default = import ./nix/module.nix { inherit self; };
       nixosModules.open-duck = self.nixosModules.default;
 
-      # Raspberry Pi Zero 2 W image configuration.
-      nixosConfigurations.rpi = nixpkgs.lib.nixosSystem {
-        modules = [
-          { nixpkgs.overlays = [ overlay ]; }
-          self.nixosModules.default
-          ./nix/rpi-image.nix
-        ];
-      };
+      # Raspberry Pi Zero 2 W image configurations, one per duck. `rpi` is kept
+      # as an alias for canard, the first one.
+      nixosConfigurations = nixpkgs.lib.mapAttrs mkDuck ducks
+        // { rpi = self.nixosConfigurations.canard; };
 
       formatter = forAllSystems (system: (pkgsFor system).nixpkgs-fmt);
     };

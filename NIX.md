@@ -105,26 +105,32 @@ journalctl -u open-duck-walk -f
 
 ## Build the Raspberry Pi Zero 2 W image
 
-`nixosConfigurations.rpi` (see `nix/rpi-image.nix`) is an aarch64 NixOS system
-with the walk service, I2C, Bluetooth (for the controller), SSH and the FTDI
-latency udev rule preconfigured. It:
+Each robot has a directory under `ducks/`; `ducks/<name>/default.nix` holds what
+is specific to it (hostname, controller, servo board, `duck_config.json` with
+its IMU calibration and joint offsets) and is layered on the shared image in
+`nix/rpi-image.nix`. Each one becomes `nixosConfigurations.<name>` and
+`packages.aarch64-linux.sd-image-<name>`; `canard` is the first (`rpi` and
+`sd-image` are aliases for it). To add a duck, copy `ducks/canard`, change the
+hostname and controller address, and refill `duck_config.json` from
+`find_soft_offsets` and `calibrate_imu`.
 
-- is reachable as `canard.local` (avahi);
+The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
+(for the controller), SSH and the FTDI latency udev rule preconfigured. It:
+
+- is reachable as `<hostname>.local` (avahi);
 - joins the `Okartie` or `escargot` Wi-Fi network;
-- starts the walk on boot, paused, with the upstream `BEST_WALK_ONNX_2.onnx`
-  policy baked in;
-- pairs the PS4 controller and uses `/dev/servohat` for the servo board.
+- starts the walk on boot, paused, with an upstream walk policy baked in
+  (`BEST_WALK_ONNX_2.onnx` by default, `BEST_WALK_ONNX.onnx` on canard);
+- pairs the duck's controller and uses `/dev/servohat` for the servo board.
 
 The Wi-Fi passwords are not in the image: after flashing, create
 `wireless.env` on the FAT firmware partition with `psk_okartie=...` and
-`psk_escargot=...` lines. The IMU calibration and joint offsets in
-`nix/rpi-image.nix` are this duck's; refill them from `find_soft_offsets` for
-another robot.
+`psk_escargot=...` lines.
 
 ```bash
 # On aarch64, or an x86_64 host with binfmt/qemu emulation
 # (boot.binfmt.emulatedSystems = [ "aarch64-linux" ];):
-nix build .#packages.aarch64-linux.sd-image
+nix build .#packages.aarch64-linux.sd-image-canard
 ```
 
 Flash `result/sd-image/*.img` to an SD card and boot. The default login user

@@ -145,23 +145,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument("--upside_down", action="store_true")
-    parser.add_argument("-a", "--accelerometer_offset", type=int, nargs=3, default=[0, 0, 0])
-    parser.add_argument("-g", "--gyroscope_offset", type=int, nargs=3, default=[0, 0, 0])
-    parser.add_argument("-m", "--magnetometer_offset", type=int, nargs=3, default=[0, 0, 0])
+    parser.add_argument("-a", "--accelerometer_offset", type=int, nargs=3)
+    parser.add_argument("-g", "--gyroscope_offset", type=int, nargs=3)
+    parser.add_argument("-m", "--magnetometer_offset", type=int, nargs=3)
 
     args = parser.parse_args()
 
-    imu_calib = ImuCalibration(
-        tuple(args.accelerometer_offset),
-        tuple(args.gyroscope_offset),
-        tuple(args.magnetometer_offset),
-    )
-
+    offsets = (args.accelerometer_offset, args.gyroscope_offset, args.magnetometer_offset)
+    imu_calib: ImuCalibration | None = None
     if args.calibrate:
         calibrator = ImuCalibrator(upside_down=args.upside_down)
         imu_calib = calibrator.calibrate()
+    elif any(o is not None for o in offsets):
+        # Offsets not given default to zero; with none given, run uncalibrated.
+        acc, gyro, mag = (tuple(o) if o is not None else (0, 0, 0) for o in offsets)
+        imu_calib = ImuCalibration(acc, gyro, mag)
 
-    imu = Imu(50, upside_down=False, calibration=imu_calib)
+    imu = Imu(50, upside_down=args.upside_down, calibration=imu_calib)
     while True:
         data = imu.get_data()
         print("gyro", np.around(data["gyro"], 3))

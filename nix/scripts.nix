@@ -56,7 +56,7 @@ pkgs.stdenv.mkDerivation {
     mkdir -p "$share/scripts" "$share/mini_bdx_runtime"
 
     cp -r scripts/. "$share/scripts/"
-    # assets referenced from the scripts as ../mini_bdx_runtime/assets/
+    # assets the scripts resolve relative to their own file (../mini_bdx_runtime/assets/)
     if [ -d mini_bdx_runtime/assets ]; then
       cp -r mini_bdx_runtime/assets "$share/mini_bdx_runtime/assets"
     fi
@@ -64,8 +64,7 @@ pkgs.stdenv.mkDerivation {
     mkdir -p $out/bin
     ${lib.concatMapStringsSep "\n" (s: ''
       makeWrapper ${duckEnv}/bin/python $out/bin/${cmdName s} \
-        --add-flags "$share/scripts/${s}.py" \
-        --chdir "$share/scripts"
+        --add-flags "$share/scripts/${s}.py"
     '') scripts}
 
     runHook postInstall

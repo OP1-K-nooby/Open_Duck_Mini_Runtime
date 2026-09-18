@@ -17,6 +17,9 @@ from mini_bdx_runtime.sounds import Sounds
 from mini_bdx_runtime.xbox_controller import XBoxController
 
 HOME_DIR = os.path.expanduser("~")
+# Resolve bundled data next to this file, not the working directory.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(SCRIPT_DIR, "..", "mini_bdx_runtime", "assets")
 
 # Number of actuated leg/head DOFs the policy controls (antennas excluded).
 NUM_DOFS = 14
@@ -123,7 +126,7 @@ class RLWalk:
 
         # Reference motion, but we only really need the length of one phase
         # TODO
-        self.PRM = PolyReferenceMotion("./polynomial_coefficients.pkl")
+        self.PRM = PolyReferenceMotion(os.path.join(SCRIPT_DIR, "polynomial_coefficients.pkl"))
         self.imitation_i = 0
         self.imitation_phase = np.array([0, 0])
         self.phase_frequency_factor = 1.0
@@ -137,9 +140,7 @@ class RLWalk:
         if self.duck_config.projector:
             self.projector = Projector()
         if self.duck_config.speaker:
-            self.sounds = Sounds(
-                volume=1.0, sound_directory="../mini_bdx_runtime/assets/"
-            )
+            self.sounds = Sounds(volume=1.0, sound_directory=ASSETS_DIR)
         if self.duck_config.antennas:
             self.antennas = Antennas()
 

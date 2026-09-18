@@ -2,6 +2,7 @@
 Sets up the robot in init position, you control the head with the xbox controller
 """
 
+import os
 import time
 
 import numpy as np
@@ -17,13 +18,16 @@ from mini_bdx_runtime.xbox_controller import XBoxController
 # can be back-driven ("puppeted") by hand.
 NUM_DOFS = 14
 PUPPET_KP = 8
+# Sounds ship next to the scripts, not in the working directory.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(SCRIPT_DIR, "..", "mini_bdx_runtime", "assets")
 
 duck_config = DuckConfig()
 
 xbox_controller = XBoxController(50, only_head_control=True)
 
 if duck_config.speaker:
-    sounds = Sounds(volume=1.0, sound_directory="../mini_bdx_runtime/assets/")
+    sounds = Sounds(volume=1.0, sound_directory=ASSETS_DIR)
 if duck_config.antennas:
     antennas = Antennas()
 if duck_config.eyes:

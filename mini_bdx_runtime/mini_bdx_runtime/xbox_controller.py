@@ -101,6 +101,14 @@ class XBoxController:
         self.last_commands = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.last_left_trigger = 0.0
         self.last_right_trigger = 0.0
+        # A button held during the drop-out never gets its JOYBUTTONUP; clear it
+        # so reconnecting doesn't register as a fresh press (and e.g. unpause).
+        self.A_pressed = False
+        self.B_pressed = False
+        self.X_pressed = False
+        self.Y_pressed = False
+        self.LB_pressed = False
+        self.RB_pressed = False
 
     def is_connected(self) -> bool:
         return self.p1 is not None

@@ -26,11 +26,10 @@ let
   walk = cfg.walk;
 
   # Resolve the duck config path: an explicit path wins, otherwise a generated
-  # file from `duckConfig`, otherwise the per-service state file.
+  # file from `duckConfig` (an assertion requires one of the two).
   walkConfigPath =
     if walk.duckConfigPath != null then walk.duckConfigPath
-    else if walk.duckConfig != null then configFile "duck_config" walk.duckConfig
-    else "/var/lib/open-duck/duck_config.json";
+    else configFile "duck_config" walk.duckConfig;
 
   walkArgs = lib.escapeShellArgs ([
     "--onnx_model_path" (toString walk.onnxModelPath)
@@ -117,9 +116,10 @@ in
         type = lib.types.nullOr lib.types.path;
         default = null;
         description = ''
-          Path to an existing duck_config.json. If null and {option}`duckConfig`
-          is set, a config file is generated; otherwise
-          /var/lib/open-duck/duck_config.json is used.
+          Path to an existing duck_config.json, e.g. a string path such as
+          "/var/lib/open-duck/duck_config.json" to use a file edited on the
+          device. If null, {option}`duckConfig` must be set and is rendered to
+          a config file.
         '';
       };
 
@@ -269,10 +269,20 @@ in
   })
 
   (lib.mkIf walk.enable {
-    assertions = [{
-      assertion = (servoBoard.vendorId == null) == (servoBoard.productId == null);
-      message = "services.open-duck.walk.servoBoard: set both vendorId and productId, or neither.";
-    }];
+    assertions = [
+      {
+        assertion = (servoBoard.vendorId == null) == (servoBoard.productId == null);
+        message = "services.open-duck.walk.servoBoard: set both vendorId and productId, or neither.";
+      }
+      {
+        # Without a config the walk prompts on stdin, which crash-loops under systemd.
+        assertion = walk.duckConfigPath != null || walk.duckConfig != null;
+        message = ''
+          services.open-duck.walk: set duckConfig, or duckConfigPath (e.g.
+          "/var/lib/open-duck/duck_config.json" for a file edited on the device).
+        '';
+      }
+    ];
 
     services.udev.extraRules = lib.mkIf hasServoBoard (''
       SUBSYSTEM=="tty", ATTRS{idVendor}=="${servoBoard.vendorId}", ATTRS{idProduct}=="${servoBoard.productId}", SYMLINK+="${servoBoard.name}", TAG+="systemd"''

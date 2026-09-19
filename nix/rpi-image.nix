@@ -19,7 +19,15 @@
   disabledModules = [ "${modulesPath}/profiles/base.nix" ];
 
   # Nobody reads the NixOS/Nix manuals, man or info pages on the duck.
+  # documentation.man.enable defaults to true on its own, and brings man-db
+  # and groff.
   documentation.enable = false;
+  documentation.man.enable = false;
+  # The desktop MIME database; nothing on a headless duck opens files by type.
+  xdg.mime.enable = false;
+  # systemd-importd (machinectl pull/import of container and VM images) is the
+  # only thing that references gnupg, to verify the downloads.
+  systemd.suppressedSystemUnits = [ "systemd-importd.service" ];
   # nixos-rebuild & co. (and the second Python they bring): the duck is
   # deployed with colmena, which only needs switch-to-configuration.
   system.disableInstallerTools = true;

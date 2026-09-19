@@ -110,7 +110,11 @@ in
     version = "9.1.0";
     url = "https://files.pythonhosted.org/packages/bb/97/17dac675981730d29b2d583de2aa0a9c2963d6c63f6bdc7eebf2711914ef/adafruit_blinka-9.1.0-py3-none-any.whl";
     hash = "sha256-b2F9Trt8LhTf4SWcY/Id9Kd9GxLV79ks9xrkvzTSG5E=";
-    deps = with pyfinal; [ adafruit-platformdetect adafruit-pureio pyftdi ];
+    # setuptools is a *runtime* dep: board.py does `import pkg_resources` to
+    # look up the adafruit_platformdetect version. Python 3.12 no longer ships
+    # setuptools in the stdlib env, so without this every `import board` dies
+    # with ModuleNotFoundError and takes the walk service down with it.
+    deps = with pyfinal; [ adafruit-platformdetect adafruit-pureio pyftdi setuptools ];
   };
 
   adafruit-circuitpython-typing = mkWheel {

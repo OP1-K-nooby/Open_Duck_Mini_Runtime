@@ -27,6 +27,12 @@ let
     if walk.duckConfigPath != null then walk.duckConfigPath
     else configFile "duck_config" walk.duckConfig;
 
+  # Whether the walk may play sounds. Unknowable for a duckConfigPath file
+  # (it may be edited on the device), so assume it might.
+  speakerEnabled =
+    walk.duckConfigPath != null
+    || ((walk.duckConfig.expression_features or { }).speaker or false);
+
   walkArgs = lib.escapeShellArgs ([
     "--onnx_model_path" (toString walk.onnxModelPath)
     "--duck_config_path" (toString walkConfigPath)
@@ -327,7 +333,15 @@ in
           # the walk's prints (UNPAUSE, "Policy control budget exceeded",
           # [IMU] errors) sit in memory — and are lost on a brown-out reset.
           "PYTHONUNBUFFERED=1"
-        ];
+        ]
+        # pygame.init() opens the sound card even when nothing plays, and
+        # ALSA then logs an "underrun occurred" every ~80 ms (~1500 journal
+        # lines in 2 min on a Pi Zero 2 W). No speaker, no sound card.
+        ++ lib.optional (!speakerEnabled) "SDL_AUDIODRIVER=dummy";
+        # The walk only cleans up (peripherals, "TURNING OFF") on
+        # KeyboardInterrupt. On SIGTERM it ignored the stop, and systemd
+        # SIGKILLed it after the 90 s stop timeout.
+        KillSignal = "SIGINT";
       };
     };
   })

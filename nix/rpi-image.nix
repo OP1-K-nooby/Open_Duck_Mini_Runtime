@@ -146,6 +146,10 @@
     # /dev/mem: "No access to /dev/mem. Try running as root!" for the walk's
     # open-duck user otherwise. As Raspbian's 99-com.rules.
     SUBSYSTEM=="gpiomem", GROUP="gpio", MODE="0660"
+    # brcmfmac comes up with Wi-Fi power saving on, and the sleeping radio
+    # misses multicast: mDNS queries go unanswered and canard.local resolves
+    # one minute and not the next.
+    ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="${pkgs.iw}/bin/iw dev $name set power_save off"
   '';
 
   # Login user, mirroring the `canard` user from the Raspbian duck: same name and

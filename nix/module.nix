@@ -323,6 +323,10 @@ in
           "SDL_JOYSTICK_HIDAPI=0"
           # Headless: pygame's event queue still needs a video driver.
           "SDL_VIDEODRIVER=dummy"
+          # stdout isn't a tty under systemd, so Python block-buffers it and
+          # the walk's prints (UNPAUSE, "Policy control budget exceeded",
+          # [IMU] errors) sit in memory — and are lost on a brown-out reset.
+          "PYTHONUNBUFFERED=1"
         ];
       };
     };

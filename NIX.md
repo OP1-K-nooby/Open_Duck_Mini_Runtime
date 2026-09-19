@@ -125,7 +125,7 @@ The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
 
 ### The kernel is Raspberry Pi's, not mainline
 
-`boot.kernelPackages = pkgs.linuxPackages_rpi02w`, and
+`boot.kernelPackages = pkgs.linuxPackages_rpi-deb`, and
 `generic-extlinux-compatible.useGenerationDeviceTree = false` so U-Boot boots
 the device tree the Pi firmware hands it rather than one out of the kernel's
 `FDTDIR`.
@@ -139,14 +139,29 @@ run on a Raspberry Pi!"* — `BLINKA_FORCEBOARD` gets you past board detection
 and no further. Keeping the firmware's device tree is also what makes
 `config.txt`'s `dtparam`/`dtoverlay` lines take effect at all.
 
-Be warned that **the downstream kernel is not in any binary cache** — not
-`cache.nixos.org`, and not `nixos-raspberrypi.cachix.org` either, whose
-prebuilt kernels are keyed to that flake's own nixpkgs pin. Expect to compile
-it, which on an x86_64 builder means hours under emulation. nixpkgs also warns
-that `linux-rpi` *"will be removed in a future release"*, so this will
-eventually want migrating to `nixos-hardware` or `nvmd/nixos-raspberrypi` —
-the latter brings a working cache, at the cost of following its nixpkgs pin
-(which is what currently gets us prebuilt onnxruntime/scipy/opencv).
+The downstream kernel is in no binary cache, and compiling it means hours under
+emulation on an x86_64 builder, so it is instead repackaged from Raspberry Pi
+OS's own `.deb` (`nix/rpi-kernel.nix`, pinned by hash to
+`archive.raspberrypi.com`): the same 6.12.75-1+rpt1 as nixpkgs' `linux-rpi`,
+with Raspberry Pi's config, which is what Raspbian ducks run. It can't be
+patched or reconfigured, and NixOS assumes its own kernel config in places,
+so `nix/rpi-image.nix` also:
+
+- installs firmware uncompressed (`hardware.firmwareCompression = "none"`):
+  the kernel has no `FW_LOADER_COMPRESS`, and `.zst` firmware means no Wi-Fi
+  or Bluetooth;
+- keeps the initrd to what it needs (the SD controller and ext4 are built in),
+  without all-hardware's PC storage drivers or the TPM drivers, which this
+  kernel doesn't have;
+- gives `/dev/gpiomem` to the `gpio` group, as Raspbian does, or RPi.GPIO
+  fails for the walk's user with *"No access to /dev/mem"*;
+- adds `dtparam=i2c_arm=on` to `config.txt` (in the image, and on a flashed
+  duck at activation) so the firmware enables the IMU's I2C bus.
+
+`nix/rpi-kernel.config` is the `=y`/`=m` part of the `.deb`'s config, which
+NixOS reads at evaluation time; the build fails if it drifts from the `.deb`.
+To move to a newer kernel, bump `version` and the hash, and regenerate it from
+the new `.deb`'s `/boot/config-*`.
 
 The Wi-Fi passwords are not in the image: after flashing, create
 `wireless.env` on the FAT firmware partition with `psk_okartie=...` and

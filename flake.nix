@@ -48,6 +48,10 @@
 
           # The upstream walk policies: open-duck-models.{best-walk,best-walk-2}.
           open-duck-models = final.callPackage ./nix/models.nix { };
+
+          # The Raspberry Pi kernel, repackaged from Raspberry Pi OS's .deb
+          # rather than compiled (see nix/rpi-kernel.nix).
+          linuxPackages_rpi-deb = final.callPackage ./nix/rpi-kernel.nix { };
         };
 
       pkgsFor = system: import nixpkgs {

@@ -28,7 +28,43 @@
   # lines in /proc/cpuinfo. Mainline provides none of that on aarch64, so
   # `import board` dies with "This module can only be run on a Raspberry Pi!"
   # however much you force adafruit-platformdetect with BLINKA_FORCEBOARD.
-  boot.kernelPackages = pkgs.linuxPackages_rpi02w;
+  # Repackaged from Raspberry Pi OS's .deb rather than compiled (see
+  # nix/rpi-kernel.nix): the kernel Raspbian ducks run, in minutes instead of
+  # an emulated kernel build.
+  boot.kernelPackages = pkgs.linuxPackages_rpi-deb;
+
+  # The initrd only needs to reach an ext4 root on the SD card, and the Pi
+  # kernel builds both the SD controller and ext4 in. What NixOS asks for on
+  # top — all-hardware.nix's PC storage drivers (sd-image.nix turns it on), the
+  # default SATA/LVM set, the TPM drivers for systemd's TPM2 support — isn't
+  # in this kernel at all, and a Pi has no TPM.
+  hardware.enableAllHardware = lib.mkForce false;
+
+  # NixOS compresses firmware with zstd for any kernel >= 5.19, taking for
+  # granted its own config's FW_LOADER_COMPRESS. Raspberry Pi's kernel is built
+  # without it, so .zst firmware is invisible to it: no Wi-Fi (brcmfmac) and no
+  # Bluetooth after boot, i.e. a headless duck that never comes back.
+  hardware.firmwareCompression = "none";
+  boot.initrd.includeDefaultModules = false;
+  boot.initrd.systemd.tpm2.enable = false;
+  systemd.tpm2.enable = false;
+
+  # The IMU is on I2C1, which the firmware only enables in the device tree it
+  # hands over (see useGenerationDeviceTree below) when config.txt says so, as
+  # Raspbian's does. sd-image-aarch64.nix's config.txt doesn't; its last
+  # section is [all], so appending lands there. A deploy never rewrites the
+  # firmware partition, so the activation script adds it to a flashed duck's
+  # config.txt too; both take effect on the next reboot.
+  sdImage.populateFirmwareCommands = lib.mkAfter ''
+    # Copied read-only out of the store.
+    chmod u+w firmware/config.txt
+    echo "dtparam=i2c_arm=on" >> firmware/config.txt
+  '';
+  system.activationScripts.firmwareI2c = ''
+    if [ -f /boot/firmware/config.txt ] && ! grep -qx 'dtparam=i2c_arm=on' /boot/firmware/config.txt; then
+      echo "dtparam=i2c_arm=on" >> /boot/firmware/config.txt
+    fi
+  '';
 
   boot.loader.grub.enable = false;
   boot.loader.generic-extlinux-compatible = {
@@ -102,6 +138,10 @@
     # GPIO/I2C access for the gpio group.
     SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"
     SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0660"
+    # RPi.GPIO maps /dev/gpiomem (root-only by default) and falls back to
+    # /dev/mem: "No access to /dev/mem. Try running as root!" for the walk's
+    # open-duck user otherwise. As Raspbian's 99-com.rules.
+    SUBSYSTEM=="gpiomem", GROUP="gpio", MODE="0660"
   '';
 
   # Login user, mirroring the `canard` user from the Raspbian duck: same name and

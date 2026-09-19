@@ -5,9 +5,16 @@
 # A released channel so onnxruntime/scipy/opencv substitute from the
     # binary cache (both x86_64 and aarch64) instead of building from source.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+
+    # Remote deploys (`colmena apply`), so a fix reaches a duck over SSH
+    # instead of via a reflash.
+    colmena = {
+      url = "github:zhaofengli/colmena";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, colmena }:
     let
       # Systems we can build the python bits for (rustypot wheels exist for both).
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -52,13 +59,50 @@
       # duck, its default.nix layered on top of the shared Pi image.
       ducks = nixpkgs.lib.filterAttrs (_: type: type == "directory")
         (builtins.readDir ./ducks);
+      # nixpkgs' own lib.nixosSystem stamps the nixpkgs revision into
+      # system.nixos.label; colmena's makeHive evaluates nodes itself and would
+      # stamp "pre-git" instead. Pin both to the same value (mkForce, because
+      # nixosSystem defines it too) so that an image and a deploy of the same
+      # commit are byte-for-byte the same system rather than two closures that
+      # only look alike.
+      versionModule = { lib, ... }: {
+        system.nixos.versionSuffix = lib.mkForce
+          ".${lib.substring 0 8 (nixpkgs.lastModifiedDate or nixpkgs.lastModified or "19700101")}.${nixpkgs.shortRev or "dirty"}";
+        system.nixos.revision = lib.mkForce (nixpkgs.rev or "dirty");
+        # Likewise for the flake registry and NIX_PATH, which nixosSystem
+        # pins to its own nixpkgs and makeHive leaves empty. mkDefault so the
+        # image build's own (identical) definition still wins.
+        nixpkgs.flake.source = lib.mkDefault nixpkgs.outPath;
+      };
+
+      # The module list a duck is made of, shared by the image builds
+      # (nixosConfigurations) and the remote deploys (colmenaHive) so the two
+      # can never drift apart.
+      duckModules = name: [
+        { nixpkgs.overlays = [ overlay ]; }
+        versionModule
+        self.nixosModules.default
+        ./nix/rpi-image.nix
+        (./ducks + "/${name}")
+      ];
       mkDuck = name: _: nixpkgs.lib.nixosSystem {
-        modules = [
-          { nixpkgs.overlays = [ overlay ]; }
-          self.nixosModules.default
-          ./nix/rpi-image.nix
-          (./ducks + "/${name}")
-        ];
+        modules = duckModules name;
+      };
+
+      # Colmena node. The ducks are aarch64 and the builder usually isn't, so
+      # every node gets an aarch64 nixpkgs; the overlay is appended on top of
+      # it by the module above (nixpkgs.overlays still applies to an
+      # externally supplied pkgs). Building happens on the deploying host —
+      # a Pi Zero 2 W has 512 MB of RAM and no business compiling anything —
+      # which needs binfmt there: boot.binfmt.emulatedSystems = [ "aarch64-linux" ].
+      mkNode = name: _: { ... }: {
+        deployment = {
+          targetHost = "${name}.local";
+          targetUser = "canard";
+          buildOnTarget = false;
+          tags = [ "duck" ];
+        };
+        imports = duckModules name;
       };
     in
     {
@@ -97,6 +141,12 @@
         {
           default = mkApp "open-duck-v2-rl-walk";
           v2-rl-walk = mkApp "open-duck-v2-rl-walk";
+          # `nix run .#deploy -- apply --on canard`
+          deploy = {
+            type = "app";
+            program = "${colmena.packages.${system}.colmena}/bin/colmena";
+            meta.description = "Deploy duck configurations with colmena";
+          };
           check-motors = mkApp "open-duck-check-motors";
           find-soft-offsets = mkApp "open-duck-find-soft-offsets";
           imu-server = mkApp "open-duck-imu-server";
@@ -117,6 +167,8 @@
                 ps.pytest
                 ps.pip
               ]))
+              # `colmena apply --on canard` to push a build to a duck.
+              colmena.packages.${system}.colmena
             ];
             shellHook = ''
               echo "Open Duck Mini dev shell — python ${pkgs.duckPython.version}"
@@ -168,6 +220,18 @@
       # as an alias for canard, the first one.
       nixosConfigurations = nixpkgs.lib.mapAttrs mkDuck ducks
         // { rpi = self.nixosConfigurations.canard; };
+
+      # The same ducks, as a colmena hive: `colmena apply --on canard`.
+      # Deploys over SSH to <name>.local as the `canard` user, which is a
+      # wheel member with passwordless sudo on the image.
+      colmenaHive = colmena.lib.makeHive ({
+        meta = {
+          nixpkgs = pkgsFor "x86_64-linux";
+          nodeNixpkgs = nixpkgs.lib.mapAttrs
+            (_: _: import nixpkgs { system = "aarch64-linux"; })
+            ducks;
+        };
+      } // nixpkgs.lib.mapAttrs mkNode ducks);
 
       formatter = forAllSystems (system: (pkgsFor system).nixpkgs-fmt);
     };

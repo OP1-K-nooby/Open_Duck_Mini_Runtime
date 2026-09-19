@@ -145,6 +145,38 @@ Flash `result/sd-image/*.img` to an SD card and boot. The default login user
 is `canard` (password `canard` — change it). `ssh canard@canard.local`, then
 `journalctl -u open-duck-walk -f` to watch the walk.
 
+## Deploy to a running duck
+
+Reflashing is only for a duck that doesn't boot. Once one is on the network,
+push changes to it with [colmena](https://colmena.cli.rs):
+
+```bash
+nix develop -c colmena apply --on canard   # or: nix run .#deploy -- apply --on canard
+nix run .#deploy -- apply-local            # (on the duck itself)
+```
+
+Every directory under `ducks/` is both a `nixosConfigurations.<name>` (for
+building an image) and a colmena hive node (for deploying), from the same
+module list — so the two cannot drift. They are in fact the same derivation:
+
+```bash
+nix eval --raw .#nixosConfigurations.canard.config.system.build.toplevel
+nix eval --raw .#colmenaHive.nodes.canard.config.system.build.toplevel
+# -> identical store paths
+```
+
+Nodes deploy over SSH to `<name>.local` as the `canard` user, which is in
+`wheel` with passwordless sudo on the image. Useful flags: `--on @duck` (all
+ducks, by tag), `build` / `push` instead of `apply` to stage without
+switching, and `--keep-result`.
+
+Builds happen on the deploying host — a Pi Zero 2 W has 512 MB of RAM and no
+business compiling anything — so an x86_64 builder needs aarch64 emulation:
+
+```nix
+boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
+```
+
 ## Tests / checks
 
 ```bash

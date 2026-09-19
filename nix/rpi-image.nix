@@ -97,6 +97,15 @@
   };
   security.sudo.wheelNeedsPassword = lib.mkDefault false;
 
+  # `colmena apply` copies an unsigned closure straight into the duck's store
+  # over SSH as this user, which nix only allows for a trusted one (the
+  # default is just root). Activation then goes through sudo, which wheel
+  # already has without a password.
+  nix.settings.trusted-users = [ "root" "@wheel" ];
+  # A duck is a machine you end up debugging over SSH; `nix store`, `nix
+  # build` and friends are not much use with the default nix.conf.
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
   services.openssh.enable = true;
   # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware.
   hardware.enableRedistributableFirmware = true;

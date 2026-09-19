@@ -17,8 +17,20 @@
   # Keep the image small-ish and buildable without extra channels.
   sdImage.compressImage = lib.mkDefault false;
 
+  # nixpkgs' profiles/base.nix (pulled in by sd-image-aarch64.nix) turns on ZFS
+  # by default. A duck never sees a zpool, and it costs a few hundred MB of
+  # image plus a memory-hungry module on a 512 MB board.
+  boot.supportedFilesystems.zfs = lib.mkForce false;
+
   boot.loader.grub.enable = false;
   boot.loader.generic-extlinux-compatible.enable = true;
+
+  # nixpkgs' sd-image.nix mounts the FAT firmware partition `nofail,noauto`, on
+  # the grounds that nothing needs it at runtime. We do: wpa_supplicant reads
+  # its PSKs from wireless.env there (see below). Left at `noauto`,
+  # /boot/firmware is an empty directory on the running system, so the secrets
+  # file is invisible no matter what you write onto the card.
+  fileSystems."/boot/firmware".options = lib.mkForce [ "nofail" ];
 
   # WiFi via wpa_supplicant; joins whichever of these networks is in range. The
   # PSKs are kept out of the image (and the git repo) and read at runtime from a
@@ -27,6 +39,8 @@
   # partition (mounted at /boot/firmware) containing:
   #     psk_okartie=<password>
   #     psk_escargot=<password>
+  # Write it with Unix newlines: the value is taken verbatim, so a CRLF file
+  # puts a stray \r in the passphrase and authentication fails silently.
   # If the file is missing, wpa_supplicant won't bring up the link.
   networking.wireless = {
     enable = lib.mkDefault true;
@@ -36,6 +50,15 @@
       Okartie = { pskRaw = lib.mkDefault "ext:psk_okartie"; priority = 10; };
       escargot = { pskRaw = lib.mkDefault "ext:psk_escargot"; priority = 5; };
     };
+  };
+
+  # wpa_supplicant runs hardened: PrivateMounts + a RootDirectory, with
+  # secretsFile bind-mounted in. That namespace is built when the unit starts,
+  # so if /boot/firmware is mounted afterwards the daemon never sees the file —
+  # it starts fine and then just fails every `ext:` PSK lookup at association
+  # time, with nothing obvious in the log. Order it after the mount.
+  systemd.services.wpa_supplicant = lib.mkIf config.networking.wireless.enable {
+    unitConfig.RequiresMountsFor = [ "/boot/firmware" ];
   };
   # Pull an address over DHCP on the wireless link.
   networking.useDHCP = lib.mkDefault true;

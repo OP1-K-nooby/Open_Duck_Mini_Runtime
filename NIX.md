@@ -125,7 +125,15 @@ The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
 
 The Wi-Fi passwords are not in the image: after flashing, create
 `wireless.env` on the FAT firmware partition with `psk_okartie=...` and
-`psk_escargot=...` lines.
+`psk_escargot=...` lines. Use Unix newlines — the value is taken verbatim, so a
+CRLF file puts a stray `\r` in the passphrase and association fails with no
+obvious error. The value may be the plain passphrase (8–63 characters) or a
+64-hex PSK.
+
+Note that the image overrides the mount options nixpkgs gives the firmware
+partition: `sd-image.nix` mounts it `noauto` on the grounds that nothing needs
+it at runtime, which would leave `/boot/firmware` empty and `wireless.env`
+invisible to wpa_supplicant.
 
 ```bash
 # On aarch64, or an x86_64 host with binfmt/qemu emulation

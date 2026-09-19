@@ -126,6 +126,10 @@
       workstation = true;
     };
   };
+  # avahi-daemon is Type=dbus but isn't ordered after the bus, and on the Pi
+  # kernel's faster boot it starts before dbus-broker is up and exits (status
+  # 0, so nothing restarts it): no canard.local until someone restarts it.
+  systemd.services.avahi-daemon.after = [ "dbus.service" ];
 
   # Hardware buses used by the runtime (IMU over I2C, motor board over USB serial).
   hardware.i2c.enable = true;

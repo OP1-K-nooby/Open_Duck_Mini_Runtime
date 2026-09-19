@@ -30,20 +30,29 @@
               src = self;
             };
           };
+
+          mkDuckEnv = extra: duckPython.withPackages (ps:
+            [ ps.mini-bdx-runtime ps.pypot ]
+            # GPIO backend for Adafruit Blinka, Pi-only (won't build on x86).
+            ++ nixpkgs.lib.optionals (final.stdenv.hostPlatform.system == "aarch64-linux")
+              (with ps; [ rpi-gpio ])
+            ++ extra ps);
         in
         {
           inherit duckPython;
 
           # Interpreter with everything the packaged scripts need on PYTHONPATH.
-          duckEnv = duckPython.withPackages (ps:
-            [ ps.mini-bdx-runtime ps.pypot ps.matplotlib ]
-            # GPIO backend for Adafruit Blinka, Pi-only (won't build on x86).
-            ++ nixpkgs.lib.optionals (final.stdenv.hostPlatform.system == "aarch64-linux")
-              (with ps; [ rpi-gpio ]));
+          duckEnv = mkDuckEnv (ps: [ ps.matplotlib ]);
+          # The same without plotting (plot_recorded_data), for the duck itself:
+          # matplotlib and its font/image stack are dead weight on a headless Pi.
+          duckEnvHeadless = mkDuckEnv (_: [ ]);
 
           open-duck-scripts = final.callPackage ./nix/scripts.nix {
             src = self;
             duckEnv = final.duckEnv;
+          };
+          open-duck-scripts-headless = final.open-duck-scripts.override {
+            duckEnv = final.duckEnvHeadless;
           };
 
           # The upstream walk policies: open-duck-models.{best-walk,best-walk-2}.

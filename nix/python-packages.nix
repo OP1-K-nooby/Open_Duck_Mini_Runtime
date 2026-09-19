@@ -91,7 +91,9 @@ in
       numpy
       packaging
       protobuf
-      sympy
+      # Not sympy, which the wheel declares: only onnxruntime.tools'
+      # symbolic shape inference imports it, never inference itself, and it
+      # is ~100 MB of the duck's closure.
     ];
     doCheck = false;
     dontCheckRuntimeDeps = true;

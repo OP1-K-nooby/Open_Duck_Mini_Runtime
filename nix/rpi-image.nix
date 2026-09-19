@@ -12,15 +12,22 @@
     "${modulesPath}/installer/sd-card/sd-image-aarch64.nix"
   ];
 
+  # sd-image-aarch64.nix pulls in the installer's profiles/base.nix: disk
+  # partitioning/repair and crypto tools, vim, and support for btrfs, xfs,
+  # ntfs, cifs, f2fs and ZFS (a memory-hungry module on a 512 MB board). A duck
+  # only ever mounts its own ext4 root and FAT firmware partition.
+  disabledModules = [ "${modulesPath}/profiles/base.nix" ];
+
+  # Nobody reads the NixOS/Nix manuals, man or info pages on the duck.
+  documentation.enable = false;
+  # nixos-rebuild & co. (and the second Python they bring): the duck is
+  # deployed with colmena, which only needs switch-to-configuration.
+  system.disableInstallerTools = true;
+
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
 
   # Keep the image small-ish and buildable without extra channels.
   sdImage.compressImage = lib.mkDefault false;
-
-  # nixpkgs' profiles/base.nix (pulled in by sd-image-aarch64.nix) turns on ZFS
-  # by default. A duck never sees a zpool, and it costs a few hundred MB of
-  # image plus a memory-hungry module on a 512 MB board.
-  boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # The downstream Raspberry Pi kernel, not mainline. Adafruit Blinka and
   # RPi.GPIO — which the walk reaches the IMU and the antennas through — need
@@ -39,15 +46,15 @@
   # default SATA/LVM set, the TPM drivers for systemd's TPM2 support — isn't
   # in this kernel at all, and a Pi has no TPM.
   hardware.enableAllHardware = lib.mkForce false;
+  boot.initrd.includeDefaultModules = false;
+  boot.initrd.systemd.tpm2.enable = false;
+  systemd.tpm2.enable = false;
 
   # NixOS compresses firmware with zstd for any kernel >= 5.19, taking for
   # granted its own config's FW_LOADER_COMPRESS. Raspberry Pi's kernel is built
   # without it, so .zst firmware is invisible to it: no Wi-Fi (brcmfmac) and no
   # Bluetooth after boot, i.e. a headless duck that never comes back.
   hardware.firmwareCompression = "none";
-  boot.initrd.includeDefaultModules = false;
-  boot.initrd.systemd.tpm2.enable = false;
-  systemd.tpm2.enable = false;
 
   # The IMU is on I2C1, which the firmware only enables in the device tree it
   # hands over (see useGenerationDeviceTree below) when config.txt says so, as
@@ -171,8 +178,24 @@
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   services.openssh.enable = true;
-  # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware.
-  hardware.enableRedistributableFirmware = true;
+  # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware, and only that: the whole of
+  # enableRedistributableFirmware (linux-firmware, sof, alsa, ...) is ~1.8 GB
+  # once stored uncompressed (see firmwareCompression above).
+  # raspberrypi-wireless-firmware (~3 MB) has what brcmfmac and hci_uart load
+  # on every Zero 2 W radio variant (brcm/brcmfmac43430-sdio.raspberrypi,
+  # model-zero-2-w.*, brcm/BCM43430A1.hcd, the 43430b0/43436 ones). All it
+  # lacks is the generic 43430 firmware and its clm_blob (regulatory channel
+  # data), which linux-firmware carries as symlinks into cypress/.
+  hardware.firmware = [
+    pkgs.raspberrypiWirelessFirmware
+    (pkgs.runCommand "brcmfmac43430-sdio-firmware" { } ''
+      mkdir -p $out/lib/firmware/brcm
+      for f in brcmfmac43430-sdio.bin brcmfmac43430-sdio.clm_blob; do
+        cp -L ${pkgs.linux-firmware}/lib/firmware/brcm/$f $out/lib/firmware/brcm/
+      done
+    '')
+  ];
+  hardware.wirelessRegulatoryDatabase = true;
 
   # Tailscale (as on the Raspbian duck). The daemon starts on boot; run
   # `sudo tailscale up` once to authenticate, or drop an auth key and set
@@ -218,11 +241,18 @@
     };
   };
 
-  # The runtime environment on the PATH for interactive use, plus BT tooling.
+  # The walk and scripts without matplotlib (plotting is for the desktop).
+  services.open-duck.package = pkgs.open-duck-scripts-headless;
+
+  # The runtime environment on the PATH for interactive use, plus BT tooling
+  # and the few debugging tools base.nix's list had that a duck needs.
   environment.systemPackages = [
     config.services.open-duck.package
     pkgs.bluez
     pkgs.bluez-tools
+    pkgs.iw
+    pkgs.i2c-tools
+    pkgs.usbutils
   ];
 
   # The walk starts on boot, paused (press A / Cross to start walking). It also

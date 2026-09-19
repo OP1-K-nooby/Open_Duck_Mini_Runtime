@@ -22,8 +22,24 @@
   # image plus a memory-hungry module on a 512 MB board.
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
+  # The downstream Raspberry Pi kernel, not mainline. Adafruit Blinka and
+  # RPi.GPIO — which the walk reaches the IMU and the antennas through — need
+  # the Raspberry Pi userspace ABI: /dev/gpiomem, and the Hardware/Revision
+  # lines in /proc/cpuinfo. Mainline provides none of that on aarch64, so
+  # `import board` dies with "This module can only be run on a Raspberry Pi!"
+  # however much you force adafruit-platformdetect with BLINKA_FORCEBOARD.
+  boot.kernelPackages = pkgs.linuxPackages_rpi02w;
+
   boot.loader.grub.enable = false;
-  boot.loader.generic-extlinux-compatible.enable = true;
+  boot.loader.generic-extlinux-compatible = {
+    enable = true;
+    # Boot the device tree the Raspberry Pi firmware hands to U-Boot instead of
+    # one out of the kernel's dtbs. The firmware's carries the properties it
+    # injects at boot — linux,revision, which RPi.GPIO reads to identify the
+    # board, among them — plus whatever config.txt's dtparam/dtoverlay lines
+    # set up. Pointing U-Boot at FDTDIR throws all of that away.
+    useGenerationDeviceTree = false;
+  };
 
   # nixpkgs' sd-image.nix mounts the FAT firmware partition `nofail,noauto`, on
   # the grounds that nothing needs it at runtime. We do: wpa_supplicant reads

@@ -123,6 +123,31 @@ The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
   (`BEST_WALK_ONNX_2.onnx` by default, `BEST_WALK_ONNX.onnx` on canard);
 - pairs the duck's controller and uses `/dev/servohat` for the servo board.
 
+### The kernel is Raspberry Pi's, not mainline
+
+`boot.kernelPackages = pkgs.linuxPackages_rpi02w`, and
+`generic-extlinux-compatible.useGenerationDeviceTree = false` so U-Boot boots
+the device tree the Pi firmware hands it rather than one out of the kernel's
+`FDTDIR`.
+
+Both are needed because the walk reaches the IMU and the antennas through
+Adafruit Blinka, which goes through `RPi.GPIO`, which wants the Raspberry Pi
+userspace ABI: `/dev/gpiomem`, the `Hardware`/`Revision` lines in
+`/proc/cpuinfo`, and `linux,revision` in the device tree. Mainline provides
+none of it on aarch64, and `import board` dies with *"This module can only be
+run on a Raspberry Pi!"* — `BLINKA_FORCEBOARD` gets you past board detection
+and no further. Keeping the firmware's device tree is also what makes
+`config.txt`'s `dtparam`/`dtoverlay` lines take effect at all.
+
+Be warned that **the downstream kernel is not in any binary cache** — not
+`cache.nixos.org`, and not `nixos-raspberrypi.cachix.org` either, whose
+prebuilt kernels are keyed to that flake's own nixpkgs pin. Expect to compile
+it, which on an x86_64 builder means hours under emulation. nixpkgs also warns
+that `linux-rpi` *"will be removed in a future release"*, so this will
+eventually want migrating to `nixos-hardware` or `nvmd/nixos-raspberrypi` —
+the latter brings a working cache, at the cost of following its nixpkgs pin
+(which is what currently gets us prebuilt onnxruntime/scipy/opencv).
+
 The Wi-Fi passwords are not in the image: after flashing, create
 `wireless.env` on the FAT firmware partition with `psk_okartie=...` and
 `psk_escargot=...` lines. Use Unix newlines — the value is taken verbatim, so a

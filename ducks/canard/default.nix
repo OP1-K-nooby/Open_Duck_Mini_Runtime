@@ -4,10 +4,8 @@
 {
   networking.hostName = "canard";
 
-  # The PS5 DualSense the Raspbian install of this duck is paired with; bonded
-  # on first boot, then reconnects on its own. To be switched to the PS4
-  # controller (1C:96:5A:2F:7F:14) once the image is confirmed working.
-  services.open-duck.controller.address = "58:10:31:97:ED:37";
+  # The PS4 DualShock 4; bonded on first boot, then reconnects on its own.
+  services.open-duck.controller.address = "1C:96:5A:2F:7F:14";
 
   users.users.canard.openssh.authorizedKeys.keys = [
     # From nixos-config (modules/meta/keys.nix, my.sshKeys).

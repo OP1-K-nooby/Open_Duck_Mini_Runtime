@@ -7,6 +7,11 @@
 #   nix build .#packages.aarch64-linux.sd-image-<name>
 # (needs an aarch64 builder or binfmt/qemu emulation on the build host).
 { modulesPath, lib, pkgs, config, ... }:
+let
+  # Software I2C for the IMU; see firmwareI2c below.
+  i2cGpioOverlay = "${config.boot.kernelPackages.kernel}/dtbs/overlays/i2c-gpio.dtbo";
+  i2cGpioOverlayLine = "dtoverlay=i2c-gpio,bus=1,i2c_gpio_sda=2,i2c_gpio_scl=3";
+in
 {
   imports = [
     "${modulesPath}/installer/sd-card/sd-image-aarch64.nix"
@@ -64,20 +69,35 @@
   # Bluetooth after boot, i.e. a headless duck that never comes back.
   hardware.firmwareCompression = "none";
 
-  # The IMU is on I2C1, which the firmware only enables in the device tree it
-  # hands over (see useGenerationDeviceTree below) when config.txt says so, as
-  # Raspbian's does. sd-image-aarch64.nix's config.txt doesn't; its last
-  # section is [all], so appending lands there. A deploy never rewrites the
-  # firmware partition, so the activation script adds it to a flashed duck's
-  # config.txt too; both take effect on the next reboot.
+  # The IMU is on the I2C1 pins (GPIO 2/3). The BNO055 stretches the clock,
+  # which the Pi's I2C controller mishandles: the walk read single corrupted
+  # bytes (gyro/accelero axes at +/-32700 raw) every few seconds, and once a
+  # bogus mode register made the driver return None. So the hardware
+  # controller (dtparam=i2c_arm) stays off and the same pins run the kernel's
+  # bit-banged i2c-gpio, which honours clock stretching, as bus 1 so Blinka
+  # still opens /dev/i2c-1.
+  #
+  # The firmware applies config.txt's overlays to the device tree it hands
+  # over (see useGenerationDeviceTree below), from the firmware partition's
+  # overlays/, which sd-image-aarch64.nix doesn't populate. Its config.txt's
+  # last section is [all], so appending lands there. A deploy never rewrites
+  # the firmware partition, so the activation script does the same to a
+  # flashed duck; both take effect on the next reboot after they run.
   sdImage.populateFirmwareCommands = lib.mkAfter ''
     # Copied read-only out of the store.
     chmod u+w firmware/config.txt
-    echo "dtparam=i2c_arm=on" >> firmware/config.txt
+    echo "${i2cGpioOverlayLine}" >> firmware/config.txt
+    mkdir -p firmware/overlays
+    cp ${i2cGpioOverlay} firmware/overlays/i2c-gpio.dtbo
   '';
   system.activationScripts.firmwareI2c = ''
-    if [ -f /boot/firmware/config.txt ] && ! grep -qx 'dtparam=i2c_arm=on' /boot/firmware/config.txt; then
-      echo "dtparam=i2c_arm=on" >> /boot/firmware/config.txt
+    if [ -f /boot/firmware/config.txt ]; then
+      mkdir -p /boot/firmware/overlays
+      cmp -s ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo \
+        || cp ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo
+      sed -i '/^dtparam=i2c_arm=on$/d' /boot/firmware/config.txt
+      grep -qx '${i2cGpioOverlayLine}' /boot/firmware/config.txt \
+        || echo '${i2cGpioOverlayLine}' >> /boot/firmware/config.txt
     fi
   '';
 

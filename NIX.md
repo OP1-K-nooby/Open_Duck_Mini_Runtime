@@ -155,8 +155,11 @@ so `nix/rpi-image.nix` also:
   kernel doesn't have;
 - gives `/dev/gpiomem` to the `gpio` group, as Raspbian does, or RPi.GPIO
   fails for the walk's user with *"No access to /dev/mem"*;
-- adds `dtparam=i2c_arm=on` to `config.txt` (in the image, and on a flashed
-  duck at activation) so the firmware enables the IMU's I2C bus.
+- runs the IMU's I2C bus as the bit-banged `i2c-gpio` on the I2C1 pins
+  (bus 1) instead of the Pi's controller, which mishandles the BNO055's clock
+  stretching: `config.txt` gets the `dtoverlay=i2c-gpio,...` line and the
+  firmware partition the overlay (in the image, and on a flashed duck at
+  activation, which then needs one more reboot to apply it).
 
 `nix/rpi-kernel.config` is the `=y`/`=m` part of the `.deb`'s config, which
 NixOS reads at evaluation time; the build fails if it drifts from the `.deb`.

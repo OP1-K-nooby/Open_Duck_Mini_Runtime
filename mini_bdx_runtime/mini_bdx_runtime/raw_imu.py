@@ -35,6 +35,8 @@ MODE_SETTLE_S = 0.1
 CALIBRATION_POLL_S = 0.1
 # The worker only keeps the most recent sample.
 SAMPLE_QUEUE_SIZE = 1
+# Consecutive sensor-less samples (0.2 s at 50 Hz) before reconfiguring it.
+RECOVER_AFTER_BAD_SAMPLES = 10
 
 
 @dataclass(frozen=True)
@@ -82,22 +84,10 @@ class Imu:
         upside_down: bool = True,
     ) -> None:
         self.sampling_freq = sampling_freq
+        self.upside_down = upside_down
+        self.calibration = calibration
         self.imu = _init_bno055(upside_down)
-
-        if calibration is not None:
-            print("Using calibration data")
-            self.imu.mode = adafruit_bno055.CONFIG_MODE
-            time.sleep(MODE_SETTLE_S)
-            print(f"accelerometer calibration: {calibration.accelerometer}")
-            self.imu.offsets_accelerometer = calibration.accelerometer
-            print(f"gyroscope calibration: {calibration.gyroscope}")
-            self.imu.offsets_gyroscope = calibration.gyroscope
-            print(f"magnetometer calibration: {calibration.magnetometer}")
-            self.imu.offsets_magnetometer = calibration.magnetometer
-            self.imu.mode = adafruit_bno055.NDOF_MODE
-            time.sleep(MODE_SETTLE_S)
-        else:
-            print("Imu is running uncalibrated")
+        self.apply_calibration()
 
         self.last_imu_data: dict[str, Any] = {
             "gyro": [0, 0, 0],
@@ -106,21 +96,68 @@ class Imu:
         self.imu_queue: Queue = Queue(maxsize=SAMPLE_QUEUE_SIZE)
         Thread(target=self.imu_worker, daemon=True).start()
 
+    def apply_calibration(self) -> None:
+        if self.calibration is not None:
+            print("Using calibration data")
+            self.imu.mode = adafruit_bno055.CONFIG_MODE
+            time.sleep(MODE_SETTLE_S)
+            print(f"accelerometer calibration: {self.calibration.accelerometer}")
+            self.imu.offsets_accelerometer = self.calibration.accelerometer
+            print(f"gyroscope calibration: {self.calibration.gyroscope}")
+            self.imu.offsets_gyroscope = self.calibration.gyroscope
+            print(f"magnetometer calibration: {self.calibration.magnetometer}")
+            self.imu.offsets_magnetometer = self.calibration.magnetometer
+            self.imu.mode = adafruit_bno055.NDOF_MODE
+            time.sleep(MODE_SETTLE_S)
+        else:
+            print("Imu is running uncalibrated")
+
+    def recover(self) -> None:
+        """Put a BNO055 that has fallen out of NDOF mode back to work.
+
+        After a reset (e.g. a supply dip) the sensor boots in CONFIG mode,
+        has lost its offsets and the driver reads (None, None, None).
+        """
+        try:
+            print(f"[IMU]: sensor in mode {self.imu.mode:#x}, reconfiguring")
+            self.imu.mode = adafruit_bno055.CONFIG_MODE
+            time.sleep(MODE_SETTLE_S)
+            self.imu.axis_remap = (
+                AXIS_REMAP_UPSIDE_DOWN if self.upside_down else AXIS_REMAP_UPRIGHT
+            )
+            self.apply_calibration()
+            self.imu.mode = adafruit_bno055.NDOF_MODE
+            time.sleep(MODE_SETTLE_S)
+        except Exception as e:
+            print("[IMU]: reconfiguration failed:", e)
+
     def imu_worker(self) -> None:
+        bad_samples = 0
         while True:
             s = time.time()
             try:
-                gyro = np.array(self.imu.gyro).copy()
-                accelero = np.array(self.imu.acceleration).copy()
+                gyro = self.imu.gyro
+                accelero = self.imu.acceleration
             except Exception as e:
                 print("[IMU]:", e)
                 continue
 
-            if gyro is None or accelero is None:
+            # The driver returns None components when the sensor is not in a
+            # mode that measures them; never let those reach the policy.
+            if None in gyro or None in accelero:
+                bad_samples += 1
+                if bad_samples == 1:
+                    print("[IMU]: no data from the sensor")
+                if bad_samples % RECOVER_AFTER_BAD_SAMPLES == 0:
+                    self.recover()
+                time.sleep(1 / self.sampling_freq)
                 continue
+            if bad_samples:
+                print(f"[IMU]: data back after {bad_samples} bad samples")
+                bad_samples = 0
 
-            if gyro.any() is None or accelero.any() is None:
-                continue
+            gyro = np.array(gyro)
+            accelero = np.array(accelero)
 
             data = {
                 "gyro": gyro,

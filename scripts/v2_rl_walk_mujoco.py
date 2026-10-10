@@ -201,7 +201,12 @@ class RLWalk:
                 feet_contacts,
                 self.imitation_phase,
             ]
-        )
+        ).astype(np.float64)  # a None reading becomes NaN
+
+        # A NaN in the observation makes the policy output NaN, which the
+        # servos turn into an extreme position.
+        if not np.all(np.isfinite(obs)):
+            return None
 
         return obs
 
@@ -210,6 +215,7 @@ class RLWalk:
         self.stats_steps = 0
         self.stats_obs_failures = 0
         self.stats_overruns = 0
+        self.stats_bad_actions = 0
         self.stats_offset_clips = 0
         self.stats_velocity_clips = 0
         self.stats_max_action = np.zeros(self.num_dofs)
@@ -230,6 +236,7 @@ class RLWalk:
             f"STATS steps={self.stats_steps}"
             f" obs_failures={self.stats_obs_failures}"
             f" overruns={self.stats_overruns}"
+            f" bad_actions={self.stats_bad_actions}"
             f" max|action|={self.stats_max_action[a]:.2f} ({joints[a]})"
             f" max|target-init|={self.stats_max_offset[o]:.2f} ({joints[o]})"
             f" offset_clips={self.stats_offset_clips}"
@@ -347,6 +354,9 @@ class RLWalk:
                         break
 
                 action = self.policy.infer(obs)
+                if not np.all(np.isfinite(action)):
+                    self.stats_bad_actions += 1
+                    continue
 
                 self.last_last_last_action = self.last_last_action.copy()
                 self.last_last_action = self.last_action.copy()

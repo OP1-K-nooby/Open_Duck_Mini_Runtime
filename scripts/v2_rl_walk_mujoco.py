@@ -43,7 +43,11 @@ FILTER_WARMUP_S = 1  # let the low-pass filter stabilize before trusting it
 STATS_PERIOD_S = 1  # how often the walk logs a summary of what it commands
 
 # Safety bounds on the motor targets sent to the servos.
-MAX_MOTOR_VELOCITY = 5.24  # rad/s, how fast a target may move per second
+# Twice the 5.24 rad/s upstream once used: at 5.24 a normal walk had up to 120
+# targets a second clipped. The policy's actions are bounded, so the targets
+# jump at most 2 * action_scale (0.5 rad) in a step; this only trims the
+# largest jumps, which the servos could not follow anyway.
+DEFAULT_MAX_MOTOR_VELOCITY = 10.5  # rad/s, how fast a target may move
 DEFAULT_MAX_TARGET_OFFSET = 1.0  # rad, how far a target may stray from init_pos
 
 # Gamepad-driven phase-frequency tuning.
@@ -67,6 +71,7 @@ class RLWalk:
         replay_obs: str | None = None,
         cutoff_frequency: float | None = None,
         max_target_offset: float = DEFAULT_MAX_TARGET_OFFSET,
+        max_motor_velocity: float = DEFAULT_MAX_MOTOR_VELOCITY,
     ) -> None:
         self.duck_config = DuckConfig(config_json_path=duck_config_path)
 
@@ -77,7 +82,7 @@ class RLWalk:
         self.policy = OnnxInfer(self.onnx_model_path, awd=True)
 
         self.num_dofs = NUM_DOFS
-        self.max_motor_velocity = MAX_MOTOR_VELOCITY
+        self.max_motor_velocity = max_motor_velocity
         self.max_target_offset = max_target_offset
 
         # Control
@@ -243,7 +248,9 @@ class RLWalk:
             f" velocity_clips={self.stats_velocity_clips}"
             f" max|gyro|={self.stats_max_gyro:.2f}"
             f" max|accelero|={self.stats_max_accelero:.2f}"
+            f" imu_spikes={self.imu.rejected_samples}"
         )
+        self.imu.rejected_samples = 0
         self.reset_stats()
 
     def start(self) -> None:
@@ -476,6 +483,12 @@ if __name__ == "__main__":
         default=DEFAULT_MAX_TARGET_OFFSET,
         help="rad, how far a motor target may stray from the standing pose",
     )
+    parser.add_argument(
+        "--max_motor_velocity",
+        type=float,
+        default=DEFAULT_MAX_MOTOR_VELOCITY,
+        help="rad/s, how fast a motor target may move",
+    )
 
     args = parser.parse_args()
     pid = [args.p, args.i, args.d]
@@ -494,6 +507,7 @@ if __name__ == "__main__":
         replay_obs=args.replay_obs,
         cutoff_frequency=args.cutoff_frequency,
         max_target_offset=args.max_target_offset,
+        max_motor_velocity=args.max_motor_velocity,
     )
     print("Done instantiating RLWalk")
     rl_walk.run()

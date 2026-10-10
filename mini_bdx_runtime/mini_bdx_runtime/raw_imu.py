@@ -38,6 +38,14 @@ SAMPLE_QUEUE_SIZE = 1
 # Consecutive sensor-less samples (0.2 s at 50 Hz) before reconfiguring it.
 RECOVER_AFTER_BAD_SAMPLES = 10
 
+# Readings no walking duck produces, i.e. corrupted I2C transfers: the walk
+# saw spikes of ~320 m/s^2 and ~35.5 rad/s (the gyro's 2000 dps full scale)
+# where it otherwise stays under ~20 m/s^2 and ~3 rad/s.
+ACCELERO_MAX_NORM = 6 * 9.81  # m/s^2; NDOF mode measures +/-4 g per axis
+GYRO_MAX_NORM = 20.0  # rad/s, ~1150 deg/s
+# How many rejected samples to print in full, to see what they look like.
+PRINTED_SPIKES = 5
+
 
 @dataclass(frozen=True)
 class ImuCalibration:
@@ -75,7 +83,6 @@ class ImuCalibrator:
         return imu_calib
 
 
-# TODO filter spikes
 class Imu:
     def __init__(
         self,
@@ -88,6 +95,10 @@ class Imu:
         self.calibration = calibration
         self.imu = _init_bno055(upside_down)
         self.apply_calibration()
+
+        # Spikes dropped since the walk last looked; it resets the count.
+        self.rejected_samples = 0
+        self.printed_spikes = 0
 
         self.last_imu_data: dict[str, Any] = {
             "gyro": [0, 0, 0],
@@ -158,6 +169,19 @@ class Imu:
 
             gyro = np.array(gyro)
             accelero = np.array(accelero)
+
+            # Drop spikes; get_data() then keeps returning the last good
+            # sample.
+            if (
+                np.linalg.norm(gyro) > GYRO_MAX_NORM
+                or np.linalg.norm(accelero) > ACCELERO_MAX_NORM
+            ):
+                self.rejected_samples += 1
+                if self.printed_spikes < PRINTED_SPIKES:
+                    self.printed_spikes += 1
+                    print(f"[IMU]: rejected spike gyro={gyro} accelero={accelero}")
+                time.sleep(1 / self.sampling_freq)
+                continue
 
             data = {
                 "gyro": gyro,

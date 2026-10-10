@@ -40,6 +40,11 @@ HEAD_JOINT_SLICE = slice(5, 9)
 STARTUP_SETTLE_S = 2
 PAUSE_POLL_S = 0.1
 FILTER_WARMUP_S = 1  # let the low-pass filter stabilize before trusting it
+STATS_PERIOD_S = 1  # how often the walk logs a summary of what it commands
+
+# Safety bounds on the motor targets sent to the servos.
+MAX_MOTOR_VELOCITY = 5.24  # rad/s, how fast a target may move per second
+DEFAULT_MAX_TARGET_OFFSET = 1.0  # rad, how far a target may stray from init_pos
 
 # Gamepad-driven phase-frequency tuning.
 PHASE_FREQ_OFFSET_STEP = 0.05
@@ -61,6 +66,7 @@ class RLWalk:
         save_obs: bool = False,
         replay_obs: str | None = None,
         cutoff_frequency: float | None = None,
+        max_target_offset: float = DEFAULT_MAX_TARGET_OFFSET,
     ) -> None:
         self.duck_config = DuckConfig(config_json_path=duck_config_path)
 
@@ -71,7 +77,8 @@ class RLWalk:
         self.policy = OnnxInfer(self.onnx_model_path, awd=True)
 
         self.num_dofs = NUM_DOFS
-        self.max_motor_velocity = 5.24  # rad/s
+        self.max_motor_velocity = MAX_MOTOR_VELOCITY
+        self.max_target_offset = max_target_offset
 
         # Control
         self.control_freq = control_freq
@@ -112,6 +119,8 @@ class RLWalk:
         self.last_last_last_action = np.zeros(self.num_dofs)
 
         self.init_pos = list(self.hwi.init_pos.values())
+        self.target_low = np.array(self.init_pos) - self.max_target_offset
+        self.target_high = np.array(self.init_pos) + self.max_target_offset
 
         self.motor_targets = np.array(self.init_pos.copy())
         self.prev_motor_targets = np.array(self.init_pos.copy())
@@ -119,6 +128,8 @@ class RLWalk:
         self.last_commands = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         self.paused = self.duck_config.start_paused
+
+        self.reset_stats()
 
         self.command_freq = COMMAND_FREQ
         if self.commands:
@@ -194,6 +205,40 @@ class RLWalk:
 
         return obs
 
+    def reset_stats(self) -> None:
+        self.stats_start_t = time.time()
+        self.stats_steps = 0
+        self.stats_obs_failures = 0
+        self.stats_overruns = 0
+        self.stats_offset_clips = 0
+        self.stats_velocity_clips = 0
+        self.stats_max_action = np.zeros(self.num_dofs)
+        self.stats_max_offset = np.zeros(self.num_dofs)
+        self.stats_max_gyro = 0.0
+        self.stats_max_accelero = 0.0
+
+    def log_stats(self) -> None:
+        """Print what the walk commanded over the last STATS_PERIOD_S.
+
+        A crash cuts the power without warning, so this summary is the only
+        trace of what the policy was asking just before.
+        """
+        joints = list(self.hwi.joints.keys())
+        a = int(np.argmax(self.stats_max_action))
+        o = int(np.argmax(self.stats_max_offset))
+        print(
+            f"STATS steps={self.stats_steps}"
+            f" obs_failures={self.stats_obs_failures}"
+            f" overruns={self.stats_overruns}"
+            f" max|action|={self.stats_max_action[a]:.2f} ({joints[a]})"
+            f" max|target-init|={self.stats_max_offset[o]:.2f} ({joints[o]})"
+            f" offset_clips={self.stats_offset_clips}"
+            f" velocity_clips={self.stats_velocity_clips}"
+            f" max|gyro|={self.stats_max_gyro:.2f}"
+            f" max|accelero|={self.stats_max_accelero:.2f}"
+        )
+        self.reset_stats()
+
     def start(self) -> None:
         kps = [self.pid[0]] * self.num_dofs
         kds = [self.pid[2]] * self.num_dofs
@@ -260,11 +305,21 @@ class RLWalk:
 
                 if self.paused:
                     time.sleep(PAUSE_POLL_S)
+                    self.reset_stats()
                     continue
+
+                if t - self.stats_start_t >= STATS_PERIOD_S:
+                    self.log_stats()
 
                 obs = self.get_obs()
                 if obs is None:
+                    self.stats_obs_failures += 1
                     continue
+
+                self.stats_max_gyro = max(self.stats_max_gyro, float(np.linalg.norm(obs[0:3])))
+                self.stats_max_accelero = max(
+                    self.stats_max_accelero, float(np.linalg.norm(obs[3:6]))
+                )
 
                 self.imitation_i += 1 * (
                     self.phase_frequency_factor + self.phase_frequency_factor_offset
@@ -299,19 +354,29 @@ class RLWalk:
 
                 self.motor_targets = self.init_pos + action * self.action_scale
 
-                # self.motor_targets = np.clip(
-                #     self.motor_targets,
-                #     self.prev_motor_targets
-                #     - self.max_motor_velocity * (1 / self.control_freq),  # control dt
-                #     self.prev_motor_targets
-                #     + self.max_motor_velocity * (1 / self.control_freq),  # control dt
-                # )
-
                 if self.action_filter is not None:
                     self.action_filter.push(self.motor_targets)
                     filtered_motor_targets = self.action_filter.get_filtered_action()
                     if time.time() - start_t > FILTER_WARMUP_S:
                         self.motor_targets = filtered_motor_targets
+
+                self.stats_max_action = np.maximum(self.stats_max_action, np.abs(action))
+                self.stats_max_offset = np.maximum(
+                    self.stats_max_offset, np.abs(self.motor_targets - self.init_pos)
+                )
+
+                # Keep the targets near the standing pose, and moving no
+                # faster than the servos can follow.
+                bounded = np.clip(self.motor_targets, self.target_low, self.target_high)
+                self.stats_offset_clips += int(np.count_nonzero(bounded != self.motor_targets))
+                max_step = self.max_motor_velocity / self.control_freq
+                limited = np.clip(
+                    bounded,
+                    self.prev_motor_targets - max_step,
+                    self.prev_motor_targets + max_step,
+                )
+                self.stats_velocity_clips += int(np.count_nonzero(limited != bounded))
+                self.motor_targets = limited
 
                 self.prev_motor_targets = self.motor_targets.copy()
 
@@ -325,9 +390,11 @@ class RLWalk:
                 self.hwi.set_position_all(action_dict)
 
                 i += 1
+                self.stats_steps += 1
 
                 took = time.time() - t
                 if (1 / self.control_freq - took) < 0:
+                    self.stats_overruns += 1
                     print(
                         "Policy control budget exceeded by",
                         np.around(took - 1 / self.control_freq, 3),
@@ -393,6 +460,12 @@ if __name__ == "__main__":
         help="replay the observations from a previous run (can be from the robot or from mujoco)",
     )
     parser.add_argument("--cutoff_frequency", type=float, default=None)
+    parser.add_argument(
+        "--max_target_offset",
+        type=float,
+        default=DEFAULT_MAX_TARGET_OFFSET,
+        help="rad, how far a motor target may stray from the standing pose",
+    )
 
     args = parser.parse_args()
     pid = [args.p, args.i, args.d]
@@ -410,6 +483,7 @@ if __name__ == "__main__":
         save_obs=args.save_obs,
         replay_obs=args.replay_obs,
         cutoff_frequency=args.cutoff_frequency,
+        max_target_offset=args.max_target_offset,
     )
     print("Done instantiating RLWalk")
     rl_walk.run()

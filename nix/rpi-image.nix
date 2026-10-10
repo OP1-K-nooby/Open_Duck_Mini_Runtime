@@ -185,6 +185,12 @@
   # build` and friends are not much use with the default nix.conf.
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  # A duck usually dies by losing power, and journald only syncs to the SD
+  # card every 5 minutes: the walk's last words before a crash were lost.
+  services.journald.extraConfig = ''
+    SyncIntervalSec=1s
+  '';
+
   services.openssh.enable = true;
   # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware, and only that: the whole of
   # enableRedistributableFirmware (linux-firmware, sof, alsa, ...) is ~1.8 GB

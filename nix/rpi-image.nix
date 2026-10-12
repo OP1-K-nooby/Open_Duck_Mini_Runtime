@@ -90,14 +90,35 @@ in
     mkdir -p firmware/overlays
     cp ${i2cGpioOverlay} firmware/overlays/i2c-gpio.dtbo
   '';
-  system.activationScripts.firmwareI2c = ''
-    if [ -f /boot/firmware/config.txt ]; then
-      mkdir -p /boot/firmware/overlays
-      ${pkgs.diffutils}/bin/cmp -s ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo \
-        || cp ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo
-      ${pkgs.gnused}/bin/sed -i '/^dtparam=i2c_arm=on$/d' /boot/firmware/config.txt
-      ${pkgs.gnugrep}/bin/grep -qx '${i2cGpioOverlayLine}' /boot/firmware/config.txt \
-        || echo '${i2cGpioOverlayLine}' >> /boot/firmware/config.txt
+  #
+  # It touches the partition only when something is missing, and syncs before
+  # handing it back read-only (see fileSystems below): a deploy used to rewrite
+  # config.txt every time, the duck lost power before the FAT was written out,
+  # and the boot-time fsck truncated config.txt to 0 bytes. The firmware then
+  # found no kernel to boot (7 flashes of the LED).
+  system.activationScripts.firmwareI2c = let
+    fw = "/boot/firmware";
+    cmp = "${pkgs.diffutils}/bin/cmp";
+    grep = "${pkgs.gnugrep}/bin/grep";
+    mount = "${pkgs.util-linux}/bin/mount";
+    findmnt = "${pkgs.util-linux}/bin/findmnt";
+  in ''
+    if [ -f ${fw}/config.txt ] \
+      && ! { ${cmp} -s ${i2cGpioOverlay} ${fw}/overlays/i2c-gpio.dtbo \
+             && ! ${grep} -qx 'dtparam=i2c_arm=on' ${fw}/config.txt \
+             && ${grep} -qx '${i2cGpioOverlayLine}' ${fw}/config.txt; }; then
+      readonly=
+      ${findmnt} -no OPTIONS ${fw} | ${grep} -qw ro && readonly=1
+      if [ -n "$readonly" ]; then ${mount} -o remount,rw ${fw}; fi
+      mkdir -p ${fw}/overlays
+      ${cmp} -s ${i2cGpioOverlay} ${fw}/overlays/i2c-gpio.dtbo \
+        || cp ${i2cGpioOverlay} ${fw}/overlays/i2c-gpio.dtbo
+      ${grep} -qx 'dtparam=i2c_arm=on' ${fw}/config.txt \
+        && ${pkgs.gnused}/bin/sed -i '/^dtparam=i2c_arm=on$/d' ${fw}/config.txt
+      ${grep} -qx '${i2cGpioOverlayLine}' ${fw}/config.txt \
+        || echo '${i2cGpioOverlayLine}' >> ${fw}/config.txt
+      ${pkgs.coreutils}/bin/sync -f ${fw}
+      if [ -n "$readonly" ]; then ${mount} -o remount,ro ${fw}; fi
     fi
   '';
 
@@ -117,7 +138,12 @@ in
   # its PSKs from wireless.env there (see below). Left at `noauto`,
   # /boot/firmware is an empty directory on the running system, so the secrets
   # file is invisible no matter what you write onto the card.
-  fileSystems."/boot/firmware".options = lib.mkForce [ "nofail" ];
+  #
+  # Read-only, though: the duck loses power without warning, and a FAT left
+  # mounted read-write is left dirty, for the boot-time fsck to "repair" by
+  # truncating whatever it was writing. To edit it on the duck:
+  #     sudo mount -o remount,rw /boot/firmware   (then sync, remount,ro)
+  fileSystems."/boot/firmware".options = lib.mkForce [ "nofail" "ro" ];
 
   # WiFi via wpa_supplicant; joins whichever of these networks is in range. The
   # PSKs are kept out of the image (and the git repo) and read at runtime from a

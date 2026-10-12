@@ -93,10 +93,10 @@ in
   system.activationScripts.firmwareI2c = ''
     if [ -f /boot/firmware/config.txt ]; then
       mkdir -p /boot/firmware/overlays
-      cmp -s ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo \
+      ${pkgs.diffutils}/bin/cmp -s ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo \
         || cp ${i2cGpioOverlay} /boot/firmware/overlays/i2c-gpio.dtbo
-      sed -i '/^dtparam=i2c_arm=on$/d' /boot/firmware/config.txt
-      grep -qx '${i2cGpioOverlayLine}' /boot/firmware/config.txt \
+      ${pkgs.gnused}/bin/sed -i '/^dtparam=i2c_arm=on$/d' /boot/firmware/config.txt
+      ${pkgs.gnugrep}/bin/grep -qx '${i2cGpioOverlayLine}' /boot/firmware/config.txt \
         || echo '${i2cGpioOverlayLine}' >> /boot/firmware/config.txt
     fi
   '';

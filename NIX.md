@@ -67,7 +67,7 @@ Add the module to your NixOS configuration:
     # Declarative duck_config.json (or set duckConfigPath to an existing file):
     duckConfig = {
       start_paused = true;
-      imu_upside_down = false;
+      imu_orientation.euler_deg = { roll = 0; pitch = 0; yaw = -90; };  # IMU in the robot frame
       phase_frequency_factor_offset = 0.0;
       expression_features = { eyes = false; projector = false; antennas = false; speaker = false; };
       joints_offsets = { left_hip_yaw = 0.0; /* ... */ };

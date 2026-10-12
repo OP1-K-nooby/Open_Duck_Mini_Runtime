@@ -2,6 +2,7 @@ import json
 import os
 import sys
 
+from mini_bdx_runtime import imu_orientation
 from mini_bdx_runtime.raw_imu import ImuCalibration
 
 HOME_DIR = os.path.expanduser("~")
@@ -70,7 +71,8 @@ class DuckConfig:
                 sys.exit(1)
 
         self.start_paused = self.json_config.get("start_paused", False)
-        self.imu_upside_down = self.json_config.get("imu_upside_down", False)
+        # The IMU in the robot frame, a rotation matrix (see imu_orientation.py).
+        self.imu_orientation = imu_orientation.from_config(self.json_config)
         imu_calib_raw = self.json_config.get("imu_calib", {})
         accelerometer_calib = tuple(imu_calib_raw.get("accelerometer", [0, 0, 0]))
         gyroscope_calib = tuple(imu_calib_raw.get("gyroscope", [0, 0, 0]))

@@ -1,6 +1,6 @@
 {
     "start_paused": false,
-    "imu_upside_down": false,
+    "imu_orientation": {"euler_deg": {"roll": 0, "pitch": 0, "yaw": -90}},
     "imu_calib": {
         "accelerometer": [-86, -22, -9],
         "gyroscope": [0, 0, 0],

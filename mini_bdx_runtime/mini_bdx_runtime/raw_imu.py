@@ -10,22 +10,16 @@ import board
 import busio
 import numpy as np
 
-# BNO055 axis remaps (x_axis, y_axis, z_axis, x_sign, y_sign, z_sign) matching
-# how the sensor is physically mounted on the robot.
-AXIS_REMAP_UPSIDE_DOWN = (
-    adafruit_bno055.AXIS_REMAP_Y,
+# The sensor reports in its own axes; the walk rotates its readings into the
+# robot's with the configured orientation (see imu_orientation.py). The chip
+# keeps its remap registers across a Pi reboot, so set them back to the
+# identity rather than leave whatever an older runtime wrote there.
+AXIS_REMAP_NONE = (
     adafruit_bno055.AXIS_REMAP_X,
-    adafruit_bno055.AXIS_REMAP_Z,
-    adafruit_bno055.AXIS_REMAP_NEGATIVE,
-    adafruit_bno055.AXIS_REMAP_NEGATIVE,
-    adafruit_bno055.AXIS_REMAP_NEGATIVE,
-)
-AXIS_REMAP_UPRIGHT = (
     adafruit_bno055.AXIS_REMAP_Y,
-    adafruit_bno055.AXIS_REMAP_X,
     adafruit_bno055.AXIS_REMAP_Z,
     adafruit_bno055.AXIS_REMAP_POSITIVE,
-    adafruit_bno055.AXIS_REMAP_NEGATIVE,
+    adafruit_bno055.AXIS_REMAP_POSITIVE,
     adafruit_bno055.AXIS_REMAP_POSITIVE,
 )
 
@@ -54,18 +48,18 @@ class ImuCalibration:
     magnetometer: tuple[int, int, int]
 
 
-def _init_bno055(upside_down: bool) -> adafruit_bno055.BNO055_I2C:
-    """Create the BNO055 over I2C in NDOF mode with the mounting axis remap."""
+def _init_bno055() -> adafruit_bno055.BNO055_I2C:
+    """Create the BNO055 over I2C in NDOF mode, in the sensor's own axes."""
     i2c = busio.I2C(board.SCL, board.SDA)
     imu = adafruit_bno055.BNO055_I2C(i2c)
     imu.mode = adafruit_bno055.NDOF_MODE
-    imu.axis_remap = AXIS_REMAP_UPSIDE_DOWN if upside_down else AXIS_REMAP_UPRIGHT
+    imu.axis_remap = AXIS_REMAP_NONE
     return imu
 
 
 class ImuCalibrator:
-    def __init__(self, upside_down: bool = True) -> None:
-        self.imu = _init_bno055(upside_down)
+    def __init__(self) -> None:
+        self.imu = _init_bno055()
 
     def calibrate(self) -> ImuCalibration:
         while not self.imu.calibrated:
@@ -88,12 +82,14 @@ class Imu:
         self,
         sampling_freq: int,
         calibration: ImuCalibration | None = None,
-        upside_down: bool = True,
+        orientation: np.ndarray | None = None,
     ) -> None:
+        """orientation: the IMU's in the robot frame (v_robot = orientation @
+        v_imu, see imu_orientation.py); None reports the sensor's own axes."""
         self.sampling_freq = sampling_freq
-        self.upside_down = upside_down
+        self.orientation = np.eye(3) if orientation is None else np.asarray(orientation)
         self.calibration = calibration
-        self.imu = _init_bno055(upside_down)
+        self.imu = _init_bno055()
         self.apply_calibration()
 
         # Spikes dropped since the walk last looked; it resets the count.
@@ -133,9 +129,7 @@ class Imu:
             print(f"[IMU]: sensor in mode {self.imu.mode:#x}, reconfiguring")
             self.imu.mode = adafruit_bno055.CONFIG_MODE
             time.sleep(MODE_SETTLE_S)
-            self.imu.axis_remap = (
-                AXIS_REMAP_UPSIDE_DOWN if self.upside_down else AXIS_REMAP_UPRIGHT
-            )
+            self.imu.axis_remap = AXIS_REMAP_NONE
             self.apply_calibration()
             self.imu.mode = adafruit_bno055.NDOF_MODE
             time.sleep(MODE_SETTLE_S)
@@ -167,8 +161,8 @@ class Imu:
                 print(f"[IMU]: data back after {bad_samples} bad samples")
                 bad_samples = 0
 
-            gyro = np.array(gyro)
-            accelero = np.array(accelero)
+            gyro = self.orientation @ np.array(gyro)
+            accelero = self.orientation @ np.array(accelero)
 
             # Drop spikes; get_data() then keeps returning the last good
             # sample.
@@ -205,7 +199,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true")
-    parser.add_argument("--upside_down", action="store_true")
+    parser.add_argument(
+        "--euler_deg",
+        type=float,
+        nargs=3,
+        metavar=("ROLL", "PITCH", "YAW"),
+        help="IMU orientation in the robot frame; the sensor's own axes if omitted",
+    )
     parser.add_argument("-a", "--accelerometer_offset", type=int, nargs=3)
     parser.add_argument("-g", "--gyroscope_offset", type=int, nargs=3)
     parser.add_argument("-m", "--magnetometer_offset", type=int, nargs=3)
@@ -215,14 +215,19 @@ if __name__ == "__main__":
     offsets = (args.accelerometer_offset, args.gyroscope_offset, args.magnetometer_offset)
     imu_calib: ImuCalibration | None = None
     if args.calibrate:
-        calibrator = ImuCalibrator(upside_down=args.upside_down)
+        calibrator = ImuCalibrator()
         imu_calib = calibrator.calibrate()
     elif any(o is not None for o in offsets):
         # Offsets not given default to zero; with none given, run uncalibrated.
         acc, gyro, mag = (tuple(o) if o is not None else (0, 0, 0) for o in offsets)
         imu_calib = ImuCalibration(acc, gyro, mag)
 
-    imu = Imu(50, upside_down=args.upside_down, calibration=imu_calib)
+    orientation = None
+    if args.euler_deg is not None:
+        from mini_bdx_runtime.imu_orientation import from_euler_deg
+
+        orientation = from_euler_deg(*args.euler_deg)
+    imu = Imu(50, calibration=imu_calib, orientation=orientation)
     while True:
         data = imu.get_data()
         print("gyro", np.around(data["gyro"], 3))

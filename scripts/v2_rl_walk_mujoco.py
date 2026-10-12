@@ -121,7 +121,7 @@ class RLWalk:
 
         self.imu = Imu(
             sampling_freq=int(self.control_freq),
-            upside_down=self.duck_config.imu_upside_down,
+            orientation=self.duck_config.imu_orientation,
             calibration = self.duck_config.imu_calib,
         )
 

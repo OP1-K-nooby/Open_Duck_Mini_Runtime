@@ -13,8 +13,6 @@ DEFAULT_KP = 32
 DEFAULT_KD = 0
 # Reduced stiffness used while powering on, so the robot eases into its pose.
 LOW_TORQUE_KP = 2
-# Delay between the power-on stiffness steps, seconds.
-TURN_ON_STEP_S = 1
 # Power-on ramp: the servos glide from where they are to init_pos while their
 # stiffness rises from LOW_TORQUE_KP to the walk's, over this long. Sending
 # all 14 straight to init_pos at once drew a current spike that browned the
@@ -127,8 +125,6 @@ class HWI:
             self.io.set_kps(list(self.joints.values()), kps.tolist())
             time.sleep(1 / TURN_ON_RAMP_HZ)
         print("turn on : init pos set, high kps")
-
-        time.sleep(TURN_ON_STEP_S)
 
     def turn_off(self) -> None:
         self.io.disable_torque(list(self.joints.values()))

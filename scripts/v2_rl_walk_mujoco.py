@@ -3,6 +3,11 @@ import pickle
 import sys
 import time
 
+# pygame imports pkg_resources only to find its own data files, and does
+# without it when the import fails. On a Pi Zero that import alone costs
+# seconds of every start, and of every restart after a servo drop-out.
+sys.modules["pkg_resources"] = None
+
 import numpy as np
 from mini_bdx_runtime.antennas import Antennas
 from mini_bdx_runtime.duck_config import DuckConfig
@@ -38,7 +43,7 @@ HEAD_KP = 8
 HEAD_JOINT_SLICE = slice(5, 9)
 
 # Timing.
-STARTUP_SETTLE_S = 2
+STARTUP_SETTLE_S = 0.5  # the power-on ramp already ends in the standing pose
 PAUSE_POLL_S = 0.1
 FILTER_WARMUP_S = 1  # let the low-pass filter stabilize before trusting it
 STATS_PERIOD_S = 1  # how often the walk logs a summary of what it commands

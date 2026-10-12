@@ -303,7 +303,9 @@ in
     systemd.services.open-duck-walk = {
       description = "Open Duck Mini RL walk";
       wantedBy = lib.mkIf walk.restart [ "multi-user.target" ];
-      after = [ "network.target" "sound.target" ]
+      # Not after network.target: the walk needs no network, and waiting for
+      # Wi-Fi held it back a second or two at every boot.
+      after = [ "sound.target" ]
         ++ lib.optional (controller.address != null) "open-duck-controller.service"
         ++ lib.optional hasServoBoard servoDeviceUnit;
       # No BindsTo on the board: when it dropped out and came back within a

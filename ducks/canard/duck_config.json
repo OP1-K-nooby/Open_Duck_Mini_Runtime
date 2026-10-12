@@ -2,7 +2,7 @@
     "start_paused": false,
     "imu_orientation": {"euler_deg": {"roll": 0, "pitch": 0, "yaw": -90}},
     "imu_calib": {
-        "accelerometer": [-86, -22, -9],
+        "accelerometer": [8, -61, -9],
         "gyroscope": [0, 0, 0],
         "magnetometer": [0, 0, 0]
     },

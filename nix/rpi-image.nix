@@ -36,6 +36,10 @@ in
   # nixos-rebuild & co. (and the second Python they bring): the duck is
   # deployed with colmena, which only needs switch-to-configuration.
   system.disableInstallerTools = true;
+  # NixOS installs perl, rsync and strace by default. Nothing on the duck runs
+  # perl (57 MB) now that the users and /etc no longer go through it (see
+  # userborn below); rsync and strace are worth their 9 MB when debugging.
+  environment.defaultPackages = [ pkgs.rsync pkgs.strace ];
 
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
 
@@ -324,7 +328,14 @@ in
     pkgs.bluez
     pkgs.bluez-tools
     pkgs.iw
-    pkgs.i2c-tools
+    # i2cdetect & co., without the Perl scripts (decode-dimms, decode-edid,
+    # ...) that alone kept perl on the duck.
+    (pkgs.i2c-tools.overrideAttrs (old: {
+      buildInputs = [ ];
+      postInstall = old.postInstall + ''
+        rm $out/bin/{ddcmon,decode-dimms,decode-edid,decode-vaio} $out/sbin/i2c-stub-from-dump
+      '';
+    }))
     pkgs.usbutils
   ];
 

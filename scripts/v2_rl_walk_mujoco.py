@@ -1,5 +1,6 @@
 import os
 import pickle
+import sys
 import time
 
 import numpy as np
@@ -41,6 +42,11 @@ STARTUP_SETTLE_S = 2
 PAUSE_POLL_S = 0.1
 FILTER_WARMUP_S = 1  # let the low-pass filter stabilize before trusting it
 STATS_PERIOD_S = 1  # how often the walk logs a summary of what it commands
+# Give up when the servos have not answered for this long: the board has
+# dropped off USB or stopped talking, and only reopening the port brings it
+# back. Exiting lets systemd restart the walk; looping on would leave the
+# servos frozen on their last target.
+SERVO_LOSS_S = 3
 
 # Safety bounds on the motor targets sent to the servos.
 # Twice the 5.24 rad/s upstream once used: at 5.24 a normal walk had up to 120
@@ -179,6 +185,7 @@ class RLWalk:
 
         if dof_pos is None or dof_vel is None:
             return None
+        self.last_servo_read_t = time.time()
 
         if len(dof_pos) != self.num_dofs:
             print(f"ERROR len(dof_pos) != {self.num_dofs}")
@@ -271,6 +278,7 @@ class RLWalk:
         try:
             print("Starting")
             start_t = time.time()
+            self.last_servo_read_t = start_t
             while True:
                 left_trigger = 0
                 right_trigger = 0
@@ -320,7 +328,13 @@ class RLWalk:
                 if self.paused:
                     time.sleep(PAUSE_POLL_S)
                     self.reset_stats()
+                    # Nothing reads the servos while paused.
+                    self.last_servo_read_t = time.time()
                     continue
+
+                if t - self.last_servo_read_t > SERVO_LOSS_S:
+                    print(f"Servos silent for {SERVO_LOSS_S}s, exiting so the walk restarts")
+                    sys.exit(1)
 
                 if t - self.stats_start_t >= STATS_PERIOD_S:
                     self.log_stats()

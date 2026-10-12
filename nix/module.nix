@@ -157,9 +157,9 @@ in
             USB vendor id of the servo driver board. When set (with
             {option}`productId`), udev gives the board a stable
             /dev/''${name} symlink, so a USB drop-out that renumbers
-            ttyACM0 to ttyACM1 doesn't break the walk: the service stops
-            when the board disappears and starts again (paused, if
-            start_paused is set) when it comes back.
+            ttyACM0 to ttyACM1 doesn't break the walk: the walk exits
+            when the servos stop answering and starts again (paused, if
+            start_paused is set) once the board is back.
           '';
         };
 
@@ -306,8 +306,11 @@ in
       after = [ "network.target" "sound.target" ]
         ++ lib.optional (controller.address != null) "open-duck-controller.service"
         ++ lib.optional hasServoBoard servoDeviceUnit;
-      # Stop with the servo board rather than crash-looping on a dead port.
-      bindsTo = lib.optional hasServoBoard servoDeviceUnit;
+      # No BindsTo on the board: when it dropped out and came back within a
+      # second, udev's start job hit the BindsTo stop job still running
+      # ("Resource deadlock avoided"), systemd dropped the start, and the
+      # servos stayed frozen on their last target. The walk exits by itself
+      # when the servos go silent, and Restart= brings it back.
       # Keep retrying however many times the board or controller drops out.
       startLimitIntervalSec = 0;
 

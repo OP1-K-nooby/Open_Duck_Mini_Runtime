@@ -15,6 +15,12 @@ DEFAULT_KD = 0
 LOW_TORQUE_KP = 2
 # Delay between the power-on stiffness steps, seconds.
 TURN_ON_STEP_S = 1
+# Power-on ramp: the servos glide from where they are to init_pos while their
+# stiffness rises from LOW_TORQUE_KP to the walk's, over this long. Sending
+# all 14 straight to init_pos at once drew a current spike that browned the
+# whole duck out.
+TURN_ON_RAMP_S = 2
+TURN_ON_RAMP_HZ = 25
 # Decimal places the present position/velocity readings are rounded to.
 ROUND_DECIMALS = 3
 
@@ -98,17 +104,31 @@ class HWI:
         self.io.set_kds(list(self.joints.values()), self.kds)
 
     def turn_on(self) -> None:
+        start = self.get_present_positions()
+        if start is None:
+            raise RuntimeError("turn on: could not read the servo positions")
+        joint_names = list(self.joints.keys())
+        target = np.array([self.init_pos[joint] for joint in joint_names])
+        low_kps = np.asarray(self.low_torque_kps, dtype=float)
+        high_kps = np.asarray(self.kps, dtype=float)
+
+        # Hold where the servos are before giving them any stiffness, so
+        # nothing jumps toward a stale goal position.
+        self.set_position_all(dict(zip(joint_names, start)))
         self.io.set_kps(list(self.joints.values()), self.low_torque_kps)
         print("turn on : low KPS set")
+
+        steps = int(TURN_ON_RAMP_S * TURN_ON_RAMP_HZ)
+        for step in range(1, steps + 1):
+            s = step / steps
+            s = s * s * (3 - 2 * s)  # smoothstep: ease in and out
+            self.set_position_all(dict(zip(joint_names, start + s * (target - start))))
+            kps = np.rint(low_kps + s * (high_kps - low_kps)).astype(int)
+            self.io.set_kps(list(self.joints.values()), kps.tolist())
+            time.sleep(1 / TURN_ON_RAMP_HZ)
+        print("turn on : init pos set, high kps")
+
         time.sleep(TURN_ON_STEP_S)
-
-        self.set_position_all(self.init_pos)
-        print("turn on : init pos set")
-
-        time.sleep(TURN_ON_STEP_S)
-
-        self.io.set_kps(list(self.joints.values()), self.kps)
-        print("turn on : high kps")
 
     def turn_off(self) -> None:
         self.io.disable_torque(list(self.joints.values()))

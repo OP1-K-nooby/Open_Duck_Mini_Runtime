@@ -15,6 +15,7 @@ in
 {
   imports = [
     "${modulesPath}/installer/sd-card/sd-image-aarch64.nix"
+    ./wifi.nix
   ];
 
   # sd-image-aarch64.nix pulls in the installer's profiles/base.nix: disk
@@ -139,7 +140,7 @@ in
 
   # nixpkgs' sd-image.nix mounts the FAT firmware partition `nofail,noauto`, on
   # the grounds that nothing needs it at runtime. We do: wpa_supplicant reads
-  # its PSKs from wireless.env there (see below). Left at `noauto`,
+  # its PSKs from wireless.env there (see wifi.nix). Left at `noauto`,
   # /boot/firmware is an empty directory on the running system, so the secrets
   # file is invisible no matter what you write onto the card.
   #
@@ -149,34 +150,8 @@ in
   #     sudo mount -o remount,rw /boot/firmware   (then sync, remount,ro)
   fileSystems."/boot/firmware".options = lib.mkForce [ "nofail" "ro" ];
 
-  # WiFi via wpa_supplicant; joins whichever of these networks is in range. The
-  # PSKs are kept out of the image (and the git repo) and read at runtime from a
-  # secrets file on the FAT firmware partition, which you can edit from any
-  # machine before first boot. Create a file named `wireless.env` on that
-  # partition (mounted at /boot/firmware) containing:
-  #     psk_okartie=<password>
-  #     psk_escargot=<password>
-  # Write it with Unix newlines: the value is taken verbatim, so a CRLF file
-  # puts a stray \r in the passphrase and authentication fails silently.
-  # If the file is missing, wpa_supplicant won't bring up the link.
-  networking.wireless = {
-    enable = lib.mkDefault true;
-    secretsFile = lib.mkDefault "/boot/firmware/wireless.env";
-    extraConfig = "country=FR";
-    networks = {
-      Okartie = { pskRaw = lib.mkDefault "ext:psk_okartie"; priority = 10; };
-      escargot = { pskRaw = lib.mkDefault "ext:psk_escargot"; priority = 5; };
-    };
-  };
-
-  # wpa_supplicant runs hardened: PrivateMounts + a RootDirectory, with
-  # secretsFile bind-mounted in. That namespace is built when the unit starts,
-  # so if /boot/firmware is mounted afterwards the daemon never sees the file —
-  # it starts fine and then just fails every `ext:` PSK lookup at association
-  # time, with nothing obvious in the log. Order it after the mount.
-  systemd.services.wpa_supplicant = lib.mkIf config.networking.wireless.enable {
-    unitConfig.RequiresMountsFor = [ "/boot/firmware" ];
-  };
+  # Wi-Fi (wpa_supplicant) is in wifi.nix; each duck lists its networks in
+  # duck.wifiNetworks.
   # Pull an address over DHCP on the wireless link.
   networking.useDHCP = lib.mkDefault true;
 

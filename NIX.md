@@ -106,7 +106,8 @@ journalctl -u open-duck-walk -f
 ## Build the Raspberry Pi Zero 2 W image
 
 Each robot has a directory under `ducks/`; `ducks/<name>/default.nix` holds what
-is specific to it (hostname, controller, servo board, `duck_config.json` with
+is specific to it (hostname, Wi-Fi networks, controller, servo board,
+`duck_config.json` with
 its IMU calibration and joint offsets) and is layered on the shared image in
 `nix/rpi-image.nix`. Each one becomes `nixosConfigurations.<name>` and
 `packages.aarch64-linux.sd-image-<name>`; `canard` is the first (`rpi` and
@@ -118,7 +119,8 @@ The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
 (for the controller), SSH and the FTDI latency udev rule preconfigured. It:
 
 - is reachable as `<hostname>.local` (avahi);
-- joins the `Okartie` or `escargot` Wi-Fi network;
+- joins the Wi-Fi networks listed in its `duck.wifiNetworks` (canard:
+  `Okartie`, then `escargot`);
 - starts the walk on boot, paused, with an upstream walk policy baked in
   (`BEST_WALK_ONNX_2.onnx` by default, `BEST_WALK_ONNX.onnx` on canard);
 - pairs the duck's controller and uses `/dev/servohat` for the servo board.
@@ -167,8 +169,10 @@ To move to a newer kernel, bump `version` and the hash, and regenerate it from
 the new `.deb`'s `/boot/config-*`.
 
 The Wi-Fi passwords are not in the image: after flashing, create
-`wireless.env` on the FAT firmware partition with `psk_okartie=...` and
-`psk_escargot=...` lines. Use Unix newlines — the value is taken verbatim, so a
+`wireless.env` on the FAT firmware partition with one `psk_<ssid>=...` line per
+network in `duck.wifiNetworks`, the SSID lowercased and anything but letters and
+digits turned into `_` (canard: `psk_okartie=...` and
+`psk_escargot=...`). Use Unix newlines — the value is taken verbatim, so a
 CRLF file puts a stray `\r` in the passphrase and association fails with no
 obvious error. The value may be the plain passphrase (8–63 characters) or a
 64-hex PSK.

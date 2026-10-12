@@ -3,6 +3,10 @@
 { lib, pkgs, ... }:
 {
   networking.hostName = "canard";
+
+  # Wi-Fi networks, most preferred first; each one's passphrase goes in
+  # wireless.env on the firmware partition, as psk_<ssid> (see nix/wifi.nix).
+  duck.wifiNetworks = [ "Okartie" "escargot" ];
   # The one systemd generated on first boot, pinned so that /etc being an
   # overlay doesn't hand the duck a new one (and its journal a new directory).
   environment.etc.machine-id.text = "ad6b9aecce82442b998d1cc6f434a0e2\n";

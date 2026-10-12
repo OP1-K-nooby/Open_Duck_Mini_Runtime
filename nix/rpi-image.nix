@@ -238,6 +238,19 @@ in
   '';
 
   services.openssh.enable = true;
+  # Kept out of /etc (see the overlay below), so the duck's host keys survive
+  # whatever happens to it.
+  services.openssh.hostKeys = [
+    { type = "ed25519"; path = "/var/lib/ssh/ssh_host_ed25519_key"; }
+    { type = "rsa"; bits = 4096; path = "/var/lib/ssh/ssh_host_rsa_key"; }
+  ];
+
+  # Every boot, the initrd ran NixOS's activation: Perl scripts that rebuild
+  # the users and /etc, 3.35 s of a Pi Zero's boot. userborn (Rust) does the
+  # users, and /etc becomes an overlay of an image built with the system.
+  # Mutable (the default), so what is written to /etc at runtime persists.
+  services.userborn.enable = true;
+  system.etc.overlay.enable = true;
   # Pi Zero 2 W Wi-Fi/Bluetooth chip firmware, and only that: the whole of
   # enableRedistributableFirmware (linux-firmware, sof, alsa, ...) is ~1.8 GB
   # once stored uncompressed (see firmwareCompression above).

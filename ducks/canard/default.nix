@@ -3,6 +3,9 @@
 { lib, pkgs, ... }:
 {
   networking.hostName = "canard";
+  # The one systemd generated on first boot, pinned so that /etc being an
+  # overlay doesn't hand the duck a new one (and its journal a new directory).
+  environment.etc.machine-id.text = "ad6b9aecce82442b998d1cc6f434a0e2\n";
 
   # The PS4 DualShock 4; bonded on first boot, then reconnects on its own.
   services.open-duck.controller.address = "1C:96:5A:2F:7F:14";

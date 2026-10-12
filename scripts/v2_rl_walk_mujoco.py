@@ -46,7 +46,7 @@ STATS_PERIOD_S = 1  # how often the walk logs a summary of what it commands
 # dropped off USB or stopped talking, and only reopening the port brings it
 # back. Exiting lets systemd restart the walk; looping on would leave the
 # servos frozen on their last target.
-SERVO_LOSS_S = 3
+SERVO_LOSS_S = 0.5
 
 # Safety bounds on the motor targets sent to the servos.
 # Twice the 5.24 rad/s upstream once used: at 5.24 a normal walk had up to 120

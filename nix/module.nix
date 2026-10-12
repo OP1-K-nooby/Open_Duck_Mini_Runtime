@@ -322,7 +322,7 @@ in
         StateDirectory = "open-duck";
         WorkingDirectory = "/var/lib/open-duck";
         Restart = "always";
-        RestartSec = 3;
+        RestartSec = 1;
         EnvironmentFile = lib.mkIf (walk.environmentFile != null) walk.environmentFile;
         # HOME so that scripts falling back to ~/duck_config.json behave.
         Environment = [

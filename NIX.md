@@ -83,7 +83,7 @@ The service runs as the `open-duck` system user, added to the
 
 With `servoBoard` set, udev names the board `/dev/servohat` whatever `ttyACM`
 number it gets. When the servos stop answering (a USB drop-out, say), the walk
-exits after 3 s and systemd restarts it until the board is back.
+exits after half a second and systemd restarts it until the board is back.
 The walk also pauses whenever the gamepad disconnects. Unpause with A (Cross on
 a PS4 controller).
 

@@ -32,7 +32,8 @@ class TelemetryWriter:
         """fields: (name, numpy scalar type, shape) per record field."""
         self.base_path = base_path
         self.dtype = np.dtype([(name, kind, shape) for name, kind, shape in fields])
-        os.makedirs(os.path.dirname(base_path) or ".", exist_ok=True)
+        directory = os.path.dirname(base_path) or "."
+        os.makedirs(directory, exist_ok=True)
         with open(base_path + ".json", "w") as f:
             json.dump(
                 {"dtype": self.dtype.descr, "created": time.time(), "meta": meta},
@@ -40,7 +41,17 @@ class TelemetryWriter:
                 indent=1,
                 default=_json_default,
             )
+            # Without this, a power cut (ext4's delayed allocation) left the
+            # header an empty file and the recording unreadable.
+            f.flush()
+            os.fsync(f.fileno())
         self.file = open(base_path + ".bin", "ab")
+        # Make both new directory entries durable too.
+        dir_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
         self.queue: Queue = Queue()
         self.stopping = threading.Event()
         self.thread = threading.Thread(target=self._writer, daemon=True)

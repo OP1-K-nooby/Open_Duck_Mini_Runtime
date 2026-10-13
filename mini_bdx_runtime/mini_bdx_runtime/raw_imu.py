@@ -1,7 +1,8 @@
 import contextlib
+import struct
 import time
 from dataclasses import dataclass
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
 from typing import Any
 
@@ -29,6 +30,21 @@ MODE_SETTLE_S = 0.1
 CALIBRATION_POLL_S = 0.1
 # The worker only keeps the most recent sample.
 SAMPLE_QUEUE_SIZE = 1
+
+# One burst read of the data registers instead of the driver's properties:
+# imu.gyro and imu.acceleration each read the mode register, then their 6
+# bytes, so 4 I2C transfers a sample on the bit-banged bus (296 samples/s
+# alone on canard, against 451 burst; far fewer when the walk holds the
+# GIL). Accelerometer 0x08-0x0D,
+# magnetometer 0x0E-0x13, gyroscope 0x14-0x19: 18 bytes from 0x08.
+DATA_REGISTER = 0x08
+DATA_LENGTH = 18
+ACCELERO_SCALE = 1 / 100  # m/s^2 per LSB
+GYRO_SCALE = 0.001090830782496456  # rad/s per LSB (1/16 deg/s)
+# The mode register is then checked this often, to notice a sensor reset;
+# a reset sensor also reads an all-zero accelerometer, which gravity rules
+# out.
+MODE_CHECK_PERIOD_S = 0.5
 # Consecutive sensor-less samples (0.2 s at 50 Hz) before reconfiguring it.
 RECOVER_AFTER_BAD_SAMPLES = 10
 
@@ -101,6 +117,8 @@ class Imu:
             "accelero": [0, 0, 0],
             "t": 0.0,
         }
+        self._register = bytes((DATA_REGISTER,))
+        self._buffer = bytearray(DATA_LENGTH)
         self.imu_queue: Queue = Queue(maxsize=SAMPLE_QUEUE_SIZE)
         Thread(target=self.imu_worker, daemon=True).start()
 
@@ -137,20 +155,35 @@ class Imu:
         except Exception as e:
             print("[IMU]: reconfiguration failed:", e)
 
+    def read_sample(self) -> tuple[np.ndarray, np.ndarray]:
+        """(gyro, accelerometer) in the sensor's axes, in one I2C transfer."""
+        with self.imu.i2c_device as i2c:
+            i2c.write_then_readinto(self._register, self._buffer)
+        ax, ay, az, _, _, _, gx, gy, gz = struct.unpack("<9h", self._buffer)
+        return (
+            np.array((gx, gy, gz)) * GYRO_SCALE,
+            np.array((ax, ay, az)) * ACCELERO_SCALE,
+        )
+
     def imu_worker(self) -> None:
         bad_samples = 0
+        measuring = True
+        last_mode_check = 0.0
         while True:
             s = time.time()
             try:
-                gyro = self.imu.gyro
-                accelero = self.imu.acceleration
+                if s - last_mode_check >= MODE_CHECK_PERIOD_S:
+                    measuring = self.imu.mode == adafruit_bno055.NDOF_MODE
+                    last_mode_check = s
+                gyro, accelero = self.read_sample()
             except Exception as e:
                 print("[IMU]:", e)
                 continue
 
-            # The driver returns None components when the sensor is not in a
-            # mode that measures them; never let those reach the policy.
-            if None in gyro or None in accelero:
+            # Out of NDOF mode (e.g. reset by a supply dip) the sensor gives
+            # no data; never let that reach the policy.
+            if not measuring or not accelero.any():
+                last_mode_check = 0.0  # look again at the next sample
                 bad_samples += 1
                 if bad_samples == 1:
                     print("[IMU]: no data from the sensor")
@@ -162,8 +195,8 @@ class Imu:
                 print(f"[IMU]: data back after {bad_samples} bad samples")
                 bad_samples = 0
 
-            gyro = self.orientation @ np.array(gyro)
-            accelero = self.orientation @ np.array(accelero)
+            gyro = self.orientation @ gyro
+            accelero = self.orientation @ accelero
 
             # Drop spikes; get_data() then keeps returning the last good
             # sample.
@@ -183,6 +216,9 @@ class Imu:
                 "accelero": accelero,
                 "t": s,  # time.time() when the sample was read
             }
+            # Replace a sample the walk hasn't taken: it gets the freshest.
+            with contextlib.suppress(Empty):
+                self.imu_queue.get_nowait()
             self.imu_queue.put(data)
             took = time.time() - s
             time.sleep(max(0, 1 / self.sampling_freq - took))
@@ -192,6 +228,31 @@ class Imu:
             self.last_imu_data = self.imu_queue.get(False)  # non blocking
 
         return self.last_imu_data
+
+
+def bench(seconds: float) -> None:
+    """Time the driver's property reads against one burst read."""
+    bno = _init_bno055()
+    register, buffer = bytes((DATA_REGISTER,)), bytearray(DATA_LENGTH)
+
+    def burst() -> tuple[np.ndarray, np.ndarray]:
+        with bno.i2c_device as i2c:
+            i2c.write_then_readinto(register, buffer)
+        ax, ay, az, _, _, _, gx, gy, gz = struct.unpack("<9h", buffer)
+        return np.array((gx, gy, gz)) * GYRO_SCALE, np.array((ax, ay, az)) * ACCELERO_SCALE
+
+    def legacy() -> tuple[np.ndarray, np.ndarray]:
+        return np.array(bno.gyro), np.array(bno.acceleration)
+
+    for name, read in (("driver properties", legacy), ("burst read", burst)):
+        n, start = 0, time.time()
+        while time.time() - start < seconds:
+            read()
+            n += 1
+        elapsed = time.time() - start
+        print(f"{name}: {n / elapsed:.0f} samples/s ({elapsed / n * 1000:.1f} ms each)")
+    (g1, a1), (g2, a2) = legacy(), burst()
+    print(f"same readings: gyro {np.round(g1, 3)} vs {np.round(g2, 3)}, accelero {np.round(a1, 2)} vs {np.round(a2, 2)}")
 
 
 if __name__ == "__main__":
@@ -211,8 +272,14 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--accelerometer_offset", type=int, nargs=3)
     parser.add_argument("-g", "--gyroscope_offset", type=int, nargs=3)
     parser.add_argument("-m", "--magnetometer_offset", type=int, nargs=3)
+    parser.add_argument(
+        "--bench", type=float, metavar="SECONDS", help="time the I2C reads, then exit"
+    )
 
     args = parser.parse_args()
+    if args.bench:
+        bench(args.bench)
+        raise SystemExit
 
     offsets = (args.accelerometer_offset, args.gyroscope_offset, args.magnetometer_offset)
     imu_calib: ImuCalibration | None = None

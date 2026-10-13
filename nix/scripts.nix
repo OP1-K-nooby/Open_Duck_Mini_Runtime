@@ -27,6 +27,7 @@ let
     "plot_recorded_data"
     "record_data"
     "new_record_data"
+    "excite_servos"
   ];
 
   # Nicer command names than the raw filename for a few scripts.

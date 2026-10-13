@@ -108,6 +108,11 @@ def main() -> None:
         "--output_dir", default=os.path.expanduser("~/telemetry"), help="where to record"
     )
     parser.add_argument("--yes", action="store_true", help="don't ask whether it hangs free")
+    # Another kp than the walk's tells the servo's gain apart from its
+    # damping and inertia, which don't change with it.
+    parser.add_argument("--kp", type=int, default=LEG_KP, help="firmware kp of the leg servos")
+    parser.add_argument("--head_kp", type=int, default=HEAD_KP, help="firmware kp of the head")
+    parser.add_argument("--kd", type=int, default=0, help="firmware kd of every servo")
     args = parser.parse_args()
 
     if walk_is_running():
@@ -129,8 +134,10 @@ def main() -> None:
     if not args.yes and input("Is the duck hanging with its feet free? [y/N] ").lower() != "y":
         sys.exit("Aborted.")
 
-    kps = [HEAD_KP if j in HEAD_JOINTS else LEG_KP for j in joints]
+    kps = [args.head_kp if j in HEAD_JOINTS else args.kp for j in joints]
+    kds = [args.kd] * len(joints)
     hwi.set_kps(kps)
+    hwi.set_kds(kds)
     hwi.turn_on()
 
     imu = Imu(
@@ -159,6 +166,7 @@ def main() -> None:
             "joints": joints,
             "ids": [hwi.joints[j] for j in joints],
             "kps": kps,
+            "kds": kds,
             "init_pos": [hwi.init_pos[j] for j in joints],
             "joints_offsets": hwi.joints_offsets,
             "steps": STEPS,

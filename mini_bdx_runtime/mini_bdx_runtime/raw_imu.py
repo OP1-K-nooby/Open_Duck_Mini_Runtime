@@ -99,6 +99,7 @@ class Imu:
         self.last_imu_data: dict[str, Any] = {
             "gyro": [0, 0, 0],
             "accelero": [0, 0, 0],
+            "t": 0.0,
         }
         self.imu_queue: Queue = Queue(maxsize=SAMPLE_QUEUE_SIZE)
         Thread(target=self.imu_worker, daemon=True).start()
@@ -180,6 +181,7 @@ class Imu:
             data = {
                 "gyro": gyro,
                 "accelero": accelero,
+                "t": s,  # time.time() when the sample was read
             }
             self.imu_queue.put(data)
             took = time.time() - s

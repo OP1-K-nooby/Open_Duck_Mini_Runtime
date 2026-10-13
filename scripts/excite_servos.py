@@ -4,7 +4,8 @@ For actuator identification: one joint at a time, around the standing pose,
 this sends steps (large ones for the dynamics, small ones for friction and
 backlash) then a sine sweep, while the other joints hold. It reads that one
 servo back as fast as the bus allows and records goal, present position and
-present velocity per read (see mini_bdx_runtime.telemetry).
+present velocity per read (see mini_bdx_runtime.telemetry), along with the
+latest IMU sample, to tell how still the torso was held.
 
 The duck must hang with its feet free, and the walk must be stopped (it
 owns the servo bus): sudo systemctl stop open-duck-walk.
@@ -20,6 +21,7 @@ import time
 import numpy as np
 
 from mini_bdx_runtime.duck_config import DuckConfig
+from mini_bdx_runtime.raw_imu import Imu
 from mini_bdx_runtime.rustypot_position_hwi import HWI
 from mini_bdx_runtime.telemetry import TelemetryWriter
 
@@ -43,6 +45,9 @@ RETURN_S = 0.5
 
 # Record segments.
 SETTLE, STEP, CHIRP, RETURN = range(4)
+
+# The BNO055 outputs gyro and accelerometer at 100 Hz in NDOF mode.
+IMU_HZ = 100
 
 
 def walk_service_args() -> dict[str, str]:
@@ -128,6 +133,12 @@ def main() -> None:
     hwi.set_kps(kps)
     hwi.turn_on()
 
+    imu = Imu(
+        sampling_freq=IMU_HZ,
+        orientation=duck_config.imu_orientation,
+        calibration=duck_config.imu_calib,
+    )
+
     base = os.path.join(args.output_dir, f"excite_{time.strftime('%Y%m%d_%H%M%S')}")
     rec = TelemetryWriter(
         base,
@@ -139,6 +150,9 @@ def main() -> None:
             ("pos", "f4", ()),  # rad, present position, without the offset
             ("vel", "f4", ()),  # rad/s, present velocity
             ("ok", "u1", ()),  # 0: the read failed, pos/vel are NaN
+            ("gyro", "f4", (3,)),  # rad/s, latest IMU sample, walk's axes
+            ("accelero", "f4", (3,)),  # m/s^2
+            ("imu_t", "f8", ()),  # when that IMU sample was read
         ],
         {
             "kind": "excitation",
@@ -152,6 +166,8 @@ def main() -> None:
             "chirp": {"amplitude": CHIRP_AMPLITUDE, "f0": CHIRP_F0, "f1": CHIRP_F1, "s": CHIRP_S},
             "settle_s": SETTLE_S,
             "return_s": RETURN_S,
+            "imu_hz": IMU_HZ,
+            "imu_orientation": duck_config.imu_orientation,
         },
     )
     print(f"Recording to {base}.bin")
@@ -177,7 +193,19 @@ def main() -> None:
                     ok = False
                     failures += 1
                 reads += 1
-                rec.write(t=now, joint=index, segment=segment, goal=goal, pos=pos, vel=vel, ok=ok)
+                sample = imu.get_data()
+                rec.write(
+                    t=now,
+                    joint=index,
+                    segment=segment,
+                    goal=goal,
+                    pos=pos,
+                    vel=vel,
+                    ok=ok,
+                    gyro=sample["gyro"],
+                    accelero=sample["accelero"],
+                    imu_t=sample["t"],
+                )
             hwi.set_position(name, init)
             print(f"{name}: {reads / JOINT_RUN_S:.0f} reads/s, {failures} failed")
     except KeyboardInterrupt:

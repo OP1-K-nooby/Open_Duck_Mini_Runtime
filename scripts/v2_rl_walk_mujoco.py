@@ -304,7 +304,7 @@ class RLWalk:
                 ("action", "f4", (self.num_dofs,)),  # raw policy output
                 ("target", "f4", (self.num_dofs,)),  # sent to the servos, rad
                 ("took", "f4", ()),  # s spent in the step before sleeping
-                ("marker", "u1", ()),  # Y pressed: something worth a look
+                ("marker", "u1", ()),  # RB pressed: something worth a look
             ],
             {
                 "kind": "walk",
@@ -381,7 +381,8 @@ class RLWalk:
                         self.antennas.set_position_left(right_trigger)
                         self.antennas.set_position_right(left_trigger)
 
-                    if self.buttons.Y.triggered and self.telemetry is not None:
+                    # RB (R1): Y already toggles the sticks to head control.
+                    if self.buttons.RB.triggered and self.telemetry is not None:
                         self.markers += 1
                         mark_next_step = True
                         print(f"MARK {self.markers}")

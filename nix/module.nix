@@ -214,7 +214,7 @@ in
           default = "/var/lib/open-duck/telemetry";
           description = ''
             Where the walk records every step it walks (observation, policy
-            action, target sent, timing; Y on the gamepad marks a moment), one
+            action, target sent, timing; RB / R1 on the gamepad marks a moment), one
             file per walk, about 1.6 MB a minute. Null disables recording.
             Read back with `python -m mini_bdx_runtime.telemetry`.
           '';

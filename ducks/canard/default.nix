@@ -23,9 +23,10 @@
   ];
 
   services.open-duck.walk = {
-    # BEST_WALK_ONNX.onnx, the policy the Raspbian duck runs (its ~/canard.sh),
-    # rather than the module's default BEST_WALK_ONNX_2.onnx.
-    onnxModelPath = pkgs.open-duck-models.best-walk;
+    # BEST_WALK_ONNX_2.onnx (the module's default), to compare it on the real
+    # duck with BEST_WALK_ONNX.onnx (pkgs.open-duck-models.best-walk), the
+    # policy the Raspbian duck ran (its ~/canard.sh).
+    onnxModelPath = pkgs.open-duck-models.best-walk-2;
 
     # Waveshare bus servo adapter (CH343), reachable as /dev/servohat whatever
     # ttyACM number it gets after a low-battery USB drop-out.

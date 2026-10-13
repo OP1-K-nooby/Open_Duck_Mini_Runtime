@@ -45,6 +45,7 @@ let
     "--pitch_bias" (toString walk.pitchBias)
   ]
   ++ lib.optionals (walk.cutoffFrequency != null) [ "--cutoff_frequency" (toString walk.cutoffFrequency) ]
+  ++ lib.optionals (walk.telemetry.dir != null) [ "--telemetry_dir" walk.telemetry.dir ]
   ++ lib.optionals walk.commands [ "--commands" ]
   ++ walk.extraArgs);
 
@@ -207,6 +208,25 @@ in
         description = "Low-pass action filter cutoff frequency (Hz). Null disables filtering.";
       };
 
+      telemetry = {
+        dir = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = "/var/lib/open-duck/telemetry";
+          description = ''
+            Where the walk records every step it walks (observation, policy
+            action, target sent, timing; Y on the gamepad marks a moment), one
+            file per walk, about 1.6 MB a minute. Null disables recording.
+            Read back with `python -m mini_bdx_runtime.telemetry`.
+          '';
+        };
+
+        keepFor = lib.mkOption {
+          type = lib.types.str;
+          default = "30d";
+          description = "How long recordings are kept (a systemd-tmpfiles age).";
+        };
+      };
+
       commands = lib.mkOption {
         type = lib.types.bool;
         default = true;
@@ -299,6 +319,12 @@ in
       createHome = true;
     };
     users.groups.${walk.group} = lib.mkIf (walk.group == "open-duck") { };
+
+    # World-readable (nothing secret in it), so recordings can be fetched
+    # over scp as any user; aged out.
+    systemd.tmpfiles.rules = lib.mkIf (walk.telemetry.dir != null) [
+      "d ${walk.telemetry.dir} 0755 ${walk.user} ${walk.group} ${walk.telemetry.keepFor}"
+    ];
 
     systemd.services.open-duck-walk = {
       description = "Open Duck Mini RL walk";

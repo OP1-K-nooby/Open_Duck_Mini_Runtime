@@ -20,6 +20,7 @@ from mini_bdx_runtime.raw_imu import Imu
 from mini_bdx_runtime.rl_utils import LowPassActionFilter, make_action_dict
 from mini_bdx_runtime.rustypot_position_hwi import HWI
 from mini_bdx_runtime.sounds import Sounds
+from mini_bdx_runtime.telemetry import TelemetryWriter
 from mini_bdx_runtime.xbox_controller import XBoxController
 
 HOME_DIR = os.path.expanduser("~")
@@ -29,6 +30,21 @@ ASSETS_DIR = os.path.join(SCRIPT_DIR, "..", "mini_bdx_runtime", "assets")
 
 # Number of actuated leg/head DOFs the policy controls (antennas excluded).
 NUM_DOFS = 14
+# The observation vector get_obs() builds, in order: (name, size).
+OBS_LAYOUT = [
+    ("gyro", 3),
+    ("accelero", 3),
+    ("commands", 7),
+    ("dof_pos_minus_init", NUM_DOFS),
+    ("dof_vel_scaled", NUM_DOFS),
+    ("last_action", NUM_DOFS),
+    ("last_last_action", NUM_DOFS),
+    ("last_last_last_action", NUM_DOFS),
+    ("motor_targets", NUM_DOFS),
+    ("feet_contacts", 2),
+    ("imitation_phase", 2),
+]
+OBS_SIZE = sum(size for _, size in OBS_LAYOUT)
 # Scale applied to joint velocities in the observation vector.
 DOF_VEL_OBS_SCALE = 0.05
 
@@ -83,6 +99,7 @@ class RLWalk:
         cutoff_frequency: float | None = None,
         max_target_offset: float = DEFAULT_MAX_TARGET_OFFSET,
         max_motor_velocity: float = DEFAULT_MAX_MOTOR_VELOCITY,
+        telemetry_dir: str | None = None,
     ) -> None:
         self.duck_config = DuckConfig(config_json_path=duck_config_path)
 
@@ -146,6 +163,12 @@ class RLWalk:
         self.paused = self.duck_config.start_paused
 
         self.reset_stats()
+
+        # Telemetry: one recording per walk process, opened at the first
+        # step walked so idle boots leave nothing behind.
+        self.telemetry_dir = telemetry_dir
+        self.telemetry: TelemetryWriter | None = None
+        self.markers = 0
 
         self.command_freq = COMMAND_FREQ
         if self.commands:
@@ -265,6 +288,40 @@ class RLWalk:
         self.imu.rejected_samples = 0
         self.reset_stats()
 
+    def open_telemetry(self) -> None:
+        """Start this walk's recording; tools/sim replay read it back."""
+        assert self.telemetry_dir is not None
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        model = os.path.splitext(os.path.basename(self.onnx_model_path))[0]
+        # The nix store path's hash-name prefix is noise in a file name.
+        model = model.split("-", 1)[-1]
+        base = os.path.join(self.telemetry_dir, f"walk_{stamp}_{model}")
+        self.telemetry = TelemetryWriter(
+            base,
+            [
+                ("t", "f8", ()),  # time.time() at the start of the step
+                ("obs", "f4", (OBS_SIZE,)),  # what the policy saw
+                ("action", "f4", (self.num_dofs,)),  # raw policy output
+                ("target", "f4", (self.num_dofs,)),  # sent to the servos, rad
+                ("took", "f4", ()),  # s spent in the step before sleeping
+                ("marker", "u1", ()),  # Y pressed: something worth a look
+            ],
+            {
+                "kind": "walk",
+                "onnx_model_path": self.onnx_model_path,
+                "joints": list(self.hwi.joints.keys()),
+                "init_pos": self.init_pos,
+                "joints_offsets": self.hwi.joints_offsets,
+                "kps": list(self.hwi.kps),
+                "control_freq": self.control_freq,
+                "action_scale": self.action_scale,
+                "max_motor_velocity": self.max_motor_velocity,
+                "max_target_offset": self.max_target_offset,
+                "obs_layout": OBS_LAYOUT,
+            },
+        )
+        print(f"TELEMETRY {base}.bin")
+
     def start(self) -> None:
         kps = [self.pid[0]] * self.num_dofs
         kds = [self.pid[2]] * self.num_dofs
@@ -284,6 +341,7 @@ class RLWalk:
             print("Starting")
             start_t = time.time()
             self.last_servo_read_t = start_t
+            mark_next_step = False
             while True:
                 left_trigger = 0
                 right_trigger = 0
@@ -322,6 +380,11 @@ class RLWalk:
                     if self.duck_config.antennas:
                         self.antennas.set_position_left(right_trigger)
                         self.antennas.set_position_right(left_trigger)
+
+                    if self.buttons.Y.triggered and self.telemetry is not None:
+                        self.markers += 1
+                        mark_next_step = True
+                        print(f"MARK {self.markers}")
 
                     if self.buttons.A.triggered:
                         self.paused = not self.paused
@@ -429,6 +492,19 @@ class RLWalk:
                 self.stats_steps += 1
 
                 took = time.time() - t
+                if self.telemetry_dir is not None:
+                    if self.telemetry is None:
+                        self.open_telemetry()
+                    assert self.telemetry is not None
+                    self.telemetry.write(
+                        t=t,
+                        obs=obs,
+                        action=action,
+                        target=self.motor_targets,
+                        took=took,
+                        marker=mark_next_step,
+                    )
+                    mark_next_step = False
                 if (1 / self.control_freq - took) < 0:
                     self.stats_overruns += 1
                     print(
@@ -445,6 +521,9 @@ class RLWalk:
             if self.duck_config.projector:
                 self.projector.stop()
             self.feet_contacts.stop()
+
+        if self.telemetry is not None:
+            self.telemetry.close()
 
         if self.save_obs:
             with open("robot_saved_obs.pkl", "wb") as f:
@@ -508,6 +587,12 @@ if __name__ == "__main__":
         default=DEFAULT_MAX_MOTOR_VELOCITY,
         help="rad/s, how fast a motor target may move",
     )
+    parser.add_argument(
+        "--telemetry_dir",
+        type=str,
+        default=None,
+        help="record every step walked (obs, action, target) to a file in this directory",
+    )
 
     args = parser.parse_args()
     pid = [args.p, args.i, args.d]
@@ -527,6 +612,7 @@ if __name__ == "__main__":
         cutoff_frequency=args.cutoff_frequency,
         max_target_offset=args.max_target_offset,
         max_motor_velocity=args.max_motor_velocity,
+        telemetry_dir=args.telemetry_dir,
     )
     print("Done instantiating RLWalk")
     rl_walk.run()

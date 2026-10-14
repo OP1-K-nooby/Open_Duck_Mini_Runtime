@@ -23,10 +23,12 @@
   ];
 
   services.open-duck.walk = {
-    # BEST_WALK_ONNX_2.onnx (the module's default), to compare it on the real
-    # duck with BEST_WALK_ONNX.onnx (pkgs.open-duck-models.best-walk), the
-    # policy the Raspbian duck ran (its ~/canard.sh).
-    onnxModelPath = pkgs.open-duck-models.best-walk-2;
+    # Trained for canard (Open_Duck_Playground branch canard, 87b66ff +
+    # 845664c): its measured mass, floor friction down to tiles', 302M steps
+    # of flat_terrain_backlash. In sim it tracks yaw rate (0.63 for 0.65,
+    # ~1.0 for 1.0) where BEST_WALK_ONNX_2 (pkgs.open-duck-models.best-walk-2,
+    # the module's default) turned 65-85% of it.
+    onnxModelPath = ./canard_walk_1.onnx;
 
     # Waveshare bus servo adapter (CH343), reachable as /dev/servohat whatever
     # ttyACM number it gets after a low-battery USB drop-out.

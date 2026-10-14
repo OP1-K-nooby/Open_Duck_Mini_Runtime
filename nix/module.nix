@@ -34,7 +34,9 @@ let
     || ((walk.duckConfig.expression_features or { }).speaker or false);
 
   walkArgs = lib.escapeShellArgs ([
-    "--onnx_model_path" (toString walk.onnxModelPath)
+    # Interpolated, not toString: a local file (./model.onnx) must be copied
+    # to the store and into the duck's closure.
+    "--onnx_model_path" "${walk.onnxModelPath}"
     "--duck_config_path" (toString walkConfigPath)
     "--serial_port" walk.serialPort
     "--control_freq" (toString walk.controlFreq)

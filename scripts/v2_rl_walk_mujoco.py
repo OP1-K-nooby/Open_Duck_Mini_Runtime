@@ -100,6 +100,7 @@ class RLWalk:
         max_target_offset: float = DEFAULT_MAX_TARGET_OFFSET,
         max_motor_velocity: float = DEFAULT_MAX_MOTOR_VELOCITY,
         telemetry_dir: str | None = None,
+        zero_gyro_yaw: bool = False,
     ) -> None:
         self.duck_config = DuckConfig(config_json_path=duck_config_path)
 
@@ -112,6 +113,10 @@ class RLWalk:
         self.num_dofs = NUM_DOFS
         self.max_motor_velocity = max_motor_velocity
         self.max_target_offset = max_target_offset
+        # Diagnostic: hide the yaw rate from the policy, to tell whether the
+        # torso's yaw wobble is fed by the policy's own reaction to it.
+        self.zero_gyro_yaw = zero_gyro_yaw
+        self.last_gyro = np.zeros(3)  # as measured, for telemetry
 
         # Control
         self.control_freq = control_freq
@@ -225,11 +230,16 @@ class RLWalk:
 
         cmds = self.last_commands
 
+        gyro = np.array(imu_data["gyro"], dtype=np.float64)
+        self.last_gyro = gyro.copy()
+        if self.zero_gyro_yaw:
+            gyro[2] = 0.0
+
         feet_contacts = self.feet_contacts.get()
 
         obs = np.concatenate(
             [
-                imu_data["gyro"],
+                gyro,
                 imu_data["accelero"],
                 cmds,
                 dof_pos - self.init_pos,
@@ -305,6 +315,7 @@ class RLWalk:
                 ("target", "f4", (self.num_dofs,)),  # sent to the servos, rad
                 ("took", "f4", ()),  # s spent in the step before sleeping
                 ("marker", "u1", ()),  # RB pressed: something worth a look
+                ("gyro", "f4", (3,)),  # rad/s as measured (obs may hide the yaw)
             ],
             {
                 "kind": "walk",
@@ -318,6 +329,7 @@ class RLWalk:
                 "max_motor_velocity": self.max_motor_velocity,
                 "max_target_offset": self.max_target_offset,
                 "obs_layout": OBS_LAYOUT,
+                "zero_gyro_yaw": self.zero_gyro_yaw,
             },
         )
         print(f"TELEMETRY {base}.bin")
@@ -504,6 +516,7 @@ class RLWalk:
                         target=self.motor_targets,
                         took=took,
                         marker=mark_next_step,
+                        gyro=self.last_gyro,
                     )
                     mark_next_step = False
                 if (1 / self.control_freq - took) < 0:
@@ -595,6 +608,12 @@ if __name__ == "__main__":
         help="record every step walked (obs, action, target) to a file in this directory",
     )
 
+    parser.add_argument(
+        "--zero_gyro_yaw",
+        action="store_true",
+        help="diagnostic: give the policy a yaw rate of 0 (telemetry keeps the measured one)",
+    )
+
     args = parser.parse_args()
     pid = [args.p, args.i, args.d]
 
@@ -614,6 +633,7 @@ if __name__ == "__main__":
         max_target_offset=args.max_target_offset,
         max_motor_velocity=args.max_motor_velocity,
         telemetry_dir=args.telemetry_dir,
+        zero_gyro_yaw=args.zero_gyro_yaw,
     )
     print("Done instantiating RLWalk")
     rl_walk.run()

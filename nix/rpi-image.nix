@@ -16,6 +16,7 @@ in
   imports = [
     "${modulesPath}/installer/sd-card/sd-image-aarch64.nix"
     ./wifi.nix
+    ./user.nix
   ];
 
   # sd-image-aarch64.nix pulls in the installer's profiles/base.nix: disk
@@ -192,13 +193,7 @@ in
     ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="${pkgs.iw}/bin/iw dev $name set power_save off"
   '';
 
-  # Login user, mirroring the `canard` user from the Raspbian duck: same name and
-  # hardware groups. Its SSH keys are set per duck, in ducks/<name>/default.nix.
-  users.users.canard = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" "dialout" "i2c" "gpio" "audio" "video" "input" "netdev" "plugdev" ];
-    initialPassword = lib.mkDefault "canard";
-  };
+  # The login user (duck.user) is in user.nix.
   security.sudo.wheelNeedsPassword = lib.mkDefault false;
 
   # `colmena apply` copies an unsigned closure straight into the duck's store

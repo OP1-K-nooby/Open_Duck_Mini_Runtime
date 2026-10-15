@@ -108,10 +108,10 @@
       # externally supplied pkgs). Building happens on the deploying host —
       # a Pi Zero 2 W has 512 MB of RAM and no business compiling anything —
       # which needs binfmt there: boot.binfmt.emulatedSystems = [ "aarch64-linux" ].
-      mkNode = name: _: { ... }: {
+      mkNode = name: _: { config, ... }: {
         deployment = {
           targetHost = "${name}.local";
-          targetUser = "canard";
+          targetUser = config.duck.user;
           buildOnTarget = false;
           tags = [ "duck" ];
         };
@@ -235,8 +235,8 @@
         // { rpi = self.nixosConfigurations.canard; };
 
       # The same ducks, as a colmena hive: `colmena apply --on canard`.
-      # Deploys over SSH to <name>.local as the `canard` user, which is a
-      # wheel member with passwordless sudo on the image.
+      # Deploys over SSH to <name>.local as its duck.user (`canard` unless the
+      # duck says otherwise), which is a wheel member with passwordless sudo on the image.
       colmenaHive = colmena.lib.makeHive ({
         meta = {
           nixpkgs = pkgsFor "x86_64-linux";

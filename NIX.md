@@ -112,7 +112,7 @@ its IMU calibration and joint offsets) and is layered on the shared image in
 `nix/rpi-image.nix`. Each one becomes `nixosConfigurations.<name>` and
 `packages.aarch64-linux.sd-image-<name>`; `canard` is the first (`rpi` and
 `sd-image` are aliases for it). To add a duck, copy `ducks/canard`, change the
-hostname and controller address, and refill `duck_config.json` from
+hostname (and `duck.user` if it isn't `canard`), controller address and machine-id, and refill `duck_config.json` from
 `find_soft_offsets` and `calibrate_imu`.
 
 The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
@@ -120,7 +120,7 @@ The image is an aarch64 NixOS system with the walk service, I2C, Bluetooth
 
 - is reachable as `<hostname>.local` (avahi);
 - joins the Wi-Fi networks listed in its `duck.wifiNetworks` (canard:
-  `Okartie`, then `escargot`);
+  `Okartie`, then `escargot`; bdxv2: `Okartie`, `kazoboner`, `O-P1-K-nooby`);
 - starts the walk on boot, paused, with an upstream walk policy baked in
   (`BEST_WALK_ONNX_2.onnx` by default, `BEST_WALK_ONNX.onnx` on canard);
 - pairs the duck's controller and uses `/dev/servohat` for the servo board.
@@ -188,8 +188,9 @@ invisible to wpa_supplicant.
 nix build .#packages.aarch64-linux.sd-image-canard
 ```
 
-Flash `result/sd-image/*.img` to an SD card and boot. The default login user
-is `canard` (password `canard` — change it). `ssh canard@canard.local`, then
+Flash `result/sd-image/*.img` to an SD card and boot. The login user is the
+duck's `duck.user`, `canard` by default (password: its name — change it;
+bdxv2: `bdxv2`, password `bdx`). `ssh canard@canard.local`, then
 `journalctl -u open-duck-walk -f` to watch the walk.
 
 ## Deploy to a running duck
@@ -212,7 +213,7 @@ nix eval --raw .#colmenaHive.nodes.canard.config.system.build.toplevel
 # -> identical store paths
 ```
 
-Nodes deploy over SSH to `<name>.local` as the `canard` user, which is in
+Nodes deploy over SSH to `<name>.local` as the duck's `duck.user` (`canard` unless set), which is in
 `wheel` with passwordless sudo on the image. Useful flags: `--on @duck` (all
 ducks, by tag), `build` / `push` instead of `apply` to stage without
 switching, and `--keep-result`.

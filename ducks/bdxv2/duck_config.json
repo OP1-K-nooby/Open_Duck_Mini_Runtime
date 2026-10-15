@@ -1,0 +1,34 @@
+{
+    "start_paused": false,
+    "imu_orientation": {"euler_deg": {"roll": 180, "pitch": 0, "yaw": 90}},
+    "imu_calib": {
+        "accelerometer": [-10, -172, -18],
+        "gyroscope": [1, -1, 0],
+        "magnetometer": [0, 0, 0]
+    },
+    "phase_frequency_factor_offset": 0.0,
+    "expression_features": {
+        "eyes": false,
+        "projector": false,
+        "antennas": false,
+        "speaker": false,
+        "microphone": false,
+        "camera": false
+    },
+    "joints_offsets": {
+        "left_hip_yaw": 0.0,
+        "left_hip_roll": 0.0,
+        "left_hip_pitch": 0.0,
+        "left_knee": 0.0,
+        "left_ankle": 0.0,
+        "neck_pitch": 0.0,
+        "head_pitch": 0.0,
+        "head_yaw": 0.0,
+        "head_roll": 0.0,
+        "right_hip_yaw": 0.0,
+        "right_hip_roll": 0.0,
+        "right_hip_pitch": 0.0,
+        "right_knee": 0.0,
+        "right_ankle": 0.0
+    }
+}

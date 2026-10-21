@@ -8,7 +8,7 @@
 
   # Wi-Fi networks, most preferred first; each one's passphrase goes in
   # wireless.env on the firmware partition, as psk_<ssid> (see nix/wifi.nix).
-  duck.wifiNetworks = [ "Okartie" "kazoboner" "O-P1-K-nooby" ];
+  duck.wifiNetworks = [ "Okartie" "kasoboner" "O-P1-K-nooby" ];
   # Pinned so that /etc being an overlay doesn't hand the duck a new one (and
   # its journal a new directory) on every boot.
   environment.etc.machine-id.text = "1798b7897f922e6449fc281238e977e0\n";
